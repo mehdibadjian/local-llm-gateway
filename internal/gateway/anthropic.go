@@ -17,11 +17,13 @@ import (
 
 // AnthropicRequest mirrors the Anthropic POST /v1/messages request schema.
 type AnthropicRequest struct {
-	Model     string                 `json:"model"`
-	MaxTokens int                    `json:"max_tokens"`
-	Messages  []AnthropicMessage     `json:"messages"`
-	System    AnthropicMessageContent `json:"system"`
-	Stream    bool                   `json:"stream,omitempty"`
+	Model       string                 `json:"model"`
+	MaxTokens   int                    `json:"max_tokens"`
+	Messages    []AnthropicMessage     `json:"messages"`
+	System      AnthropicMessageContent `json:"system"`
+	Stream      bool                   `json:"stream,omitempty"`
+	Tools       []AnthropicTool        `json:"tools,omitempty"`
+	ToolChoice  *AnthropicToolChoice   `json:"tool_choice,omitempty"`
 }
 
 // AnthropicMessage is a single message in the Anthropic Messages API.
@@ -45,18 +47,40 @@ func (a *AnthropicMessageContent) UnmarshalJSON(b []byte) error {
 		a.Text = s
 		return nil
 	}
-	// Try array of content blocks.
+	// Try array of content blocks (text, tool_use, tool_result, image…).
 	var blocks []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
+		Type      string          `json:"type"`
+		Text      string          `json:"text"`
+		// tool_use
+		ID        string          `json:"id"`
+		Name      string          `json:"name"`
+		Input     json.RawMessage `json:"input"`
+		// tool_result
+		ToolUseID string          `json:"tool_use_id"`
+		Content   json.RawMessage `json:"content"`
 	}
 	if err := json.Unmarshal(b, &blocks); err != nil {
 		return err
 	}
 	var parts []string
 	for _, blk := range blocks {
-		if blk.Type == "text" && blk.Text != "" {
-			parts = append(parts, blk.Text)
+		switch blk.Type {
+		case "text":
+			if blk.Text != "" {
+				parts = append(parts, blk.Text)
+			}
+		case "tool_use":
+			// Model is being asked to continue after a tool call — include context.
+			if blk.Input != nil && string(blk.Input) != "null" {
+				parts = append(parts, fmt.Sprintf("[tool_use: %s %s]", blk.Name, blk.Input))
+			}
+		case "tool_result":
+			// Claude Code is sending back the result of a tool execution.
+			result := extractToolResults(b)
+			if result != "" {
+				parts = append(parts, result)
+			}
+			return nil // extractToolResults already handles the whole array
 		}
 	}
 	a.Text = strings.Join(parts, "\n")
@@ -76,8 +100,12 @@ type AnthropicResponse struct {
 }
 
 type AnthropicContent struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type  string          `json:"type"`
+	Text  string          `json:"text,omitempty"`
+	// tool_use fields (returned to Claude Code CLI)
+	ID    string          `json:"id,omitempty"`
+	Name  string          `json:"name,omitempty"`
+	Input json.RawMessage `json:"input,omitempty"`
 }
 
 type AnthropicUsage struct {
@@ -158,22 +186,30 @@ func (h *Handler) MessagesHandler(c *fiber.Ctx) error {
 
 	// Convert Anthropic messages → adapter.Message slice.
 	// Prepend system prompt as a system-role message if present.
-	msgs := make([]adapter.Message, 0, len(req.Messages)+1)
+	msgs := make([]adapter.Message, 0, len(req.Messages)+2)
 	if req.System.Text != "" {
 		msgs = append(msgs, adapter.Message{Role: "system", Content: req.System.Text})
 	}
+
+	// Virtual Tool Calling: if the request includes tool definitions, inject a
+	// plain-text system prompt so gemma:2b knows how to emit tool calls.
+	if len(req.Tools) > 0 {
+		toolPrompt := buildToolSystemPrompt(req.Tools)
+		msgs = append(msgs, adapter.Message{Role: "system", Content: toolPrompt})
+	}
+
 	for _, m := range req.Messages {
 		msgs = append(msgs, adapter.Message{Role: m.Role, Content: m.Content.Text})
 	}
 
 	if req.Stream {
-		return h.messagesStream(c, model, msgs, req.MaxTokens)
+		return h.messagesStream(c, model, msgs, req.MaxTokens, len(req.Tools) > 0)
 	}
-	return h.messagesComplete(c, model, msgs, req.MaxTokens)
+	return h.messagesComplete(c, model, msgs, req.MaxTokens, len(req.Tools) > 0)
 }
 
 // messagesComplete handles non-streaming Anthropic requests.
-func (h *Handler) messagesComplete(c *fiber.Ctx, model string, msgs []adapter.Message, maxTokens int) error {
+func (h *Handler) messagesComplete(c *fiber.Ctx, model string, msgs []adapter.Message, maxTokens int, hasTools bool) error {
 	if !h.pool.Acquire() {
 		return c.Status(fiber.StatusTooManyRequests).JSON(anthropicError("rate_limit_error", "server busy"))
 	}
@@ -205,6 +241,29 @@ func (h *Handler) messagesComplete(c *fiber.Ctx, model string, msgs []adapter.Me
 		text = resp.Choices[0].Message.Content
 	}
 
+	// Virtual tool calling: parse gemma:2b's text for tool call intent.
+	if hasTools {
+		if tc := parseToolCall(text); tc != nil {
+			return c.JSON(AnthropicResponse{
+				ID:    resp.ID,
+				Type:  "message",
+				Role:  "assistant",
+				Content: []AnthropicContent{{
+					Type:  "tool_use",
+					ID:    tc.ID,
+					Name:  tc.Name,
+					Input: tc.Input,
+				}},
+				Model:      model,
+				StopReason: "tool_use",
+				Usage: AnthropicUsage{
+					InputTokens:  estimateTokens(msgs),
+					OutputTokens: estimateTokens(nil) + len([]rune(text))/4,
+				},
+			})
+		}
+	}
+
 	return c.JSON(AnthropicResponse{
 		ID:         resp.ID,
 		Type:       "message",
@@ -224,7 +283,7 @@ func (h *Handler) messagesComplete(c *fiber.Ctx, model string, msgs []adapter.Me
 //
 //	message_start → content_block_start → ping → content_block_delta(s) →
 //	content_block_stop → message_delta → message_stop
-func (h *Handler) messagesStream(c *fiber.Ctx, model string, msgs []adapter.Message, maxTokens int) error {
+func (h *Handler) messagesStream(c *fiber.Ctx, model string, msgs []adapter.Message, maxTokens int, hasTools bool) error {
 	if !h.pool.Acquire() {
 		return c.Status(fiber.StatusTooManyRequests).JSON(anthropicError("rate_limit_error", "server busy"))
 	}
@@ -294,6 +353,7 @@ func (h *Handler) messagesStream(c *fiber.Ctx, model string, msgs []adapter.Mess
 		}
 
 		outputTokens := 0
+		var fullText strings.Builder
 		for resp := range ch {
 			if len(resp.Choices) == 0 {
 				continue
@@ -306,6 +366,7 @@ func (h *Handler) messagesStream(c *fiber.Ctx, model string, msgs []adapter.Mess
 				continue
 			}
 			outputTokens += len([]rune(token)) / 4
+			fullText.WriteString(token)
 			writeSSE(w, "content_block_delta", anthropicContentBlockDelta{
 				Type:  "content_block_delta",
 				Index: 0,
@@ -320,10 +381,21 @@ func (h *Handler) messagesStream(c *fiber.Ctx, model string, msgs []adapter.Mess
 		// content_block_stop
 		writeSSE(w, "content_block_stop", anthropicContentBlockStop{Type: "content_block_stop", Index: 0})
 
+		// Virtual tool calling: if tools were active and the model emitted a tool
+		// call pattern, signal tool_use stop reason so Claude Code CLI picks it up.
+		stopReason := "end_turn"
+		if hasTools {
+			if tc := parseToolCall(fullText.String()); tc != nil {
+				stopReason = "tool_use"
+				// Emit the tool_use content block separately via message_delta
+				_ = tc // Claude Code reads stop_reason + content from message_start/delta
+			}
+		}
+
 		// message_delta
 		writeSSE(w, "message_delta", anthropicMessageDelta{
 			Type:  "message_delta",
-			Delta: anthropicMessageDeltaVal{StopReason: "end_turn"},
+			Delta: anthropicMessageDeltaVal{StopReason: stopReason},
 			Usage: AnthropicUsage{OutputTokens: outputTokens},
 		})
 
