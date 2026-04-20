@@ -19,6 +19,11 @@ config:
   ollamaBaseUrl: "http://ollama:11434"
   qdrantBaseUrl: "http://qdrant:6333"
 
+# CodeExecutor sandbox configuration
+codeexec:
+  # Runtime for executing code: "native" (default seccomp + cgroup) or "gvisor" (runsc container runtime)
+  runtime: native
+
 resources:
   requests:
     memory: "128Mi"
@@ -26,3 +31,4 @@ resources:
   limits:
     memory: "512Mi"
     cpu: "500m"
+

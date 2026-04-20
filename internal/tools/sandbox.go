@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 	"time"
@@ -95,6 +96,13 @@ func (s *Sandbox) buildCommand(ctx context.Context, _ *Tool, call ToolCall) *exe
 
 	args := input.Args
 
+	// Check if gVisor runtime is requested
+	runtimeMode := os.Getenv("CODEEXEC_RUNTIME")
+	if runtimeMode == "gvisor" {
+		return s.buildGVisorCommand(ctx, args)
+	}
+
+	// Native mode (default): use cgexec on Linux, direct execution elsewhere
 	if runtime.GOOS == "linux" {
 		cgName := fmt.Sprintf("%s_%s", s.cgroupPrefix, uuid.New().String()[:8])
 		cgSpec := fmt.Sprintf("memory,cpu:%s", cgName)
@@ -106,4 +114,16 @@ func (s *Sandbox) buildCommand(ctx context.Context, _ *Tool, call ToolCall) *exe
 		return exec.CommandContext(ctx, "echo", "no-op")
 	}
 	return exec.CommandContext(ctx, args[0], args[1:]...)
+}
+
+// buildGVisorCommand constructs a command that runs the given args under gVisor (runsc).
+// The resulting command will be: runsc do -- <args...>
+func (s *Sandbox) buildGVisorCommand(ctx context.Context, args []string) *exec.Cmd {
+	if len(args) == 0 {
+		// Fallback if no args provided
+		return exec.CommandContext(ctx, "echo", "no-op")
+	}
+	// runsc do -- <args...>
+	cmdArgs := append([]string{"do", "--"}, args...)
+	return exec.CommandContext(ctx, "runsc", cmdArgs...)
 }
