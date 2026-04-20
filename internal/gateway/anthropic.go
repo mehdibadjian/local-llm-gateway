@@ -313,3 +313,64 @@ func localModel() string {
 	}
 	return "gemma:2b"
 }
+
+// ── Models list endpoints (probed by Claude Code CLI and OpenAI clients) ──────
+
+// anthropicModelEntry is a single entry in the models list.
+type anthropicModelEntry struct {
+	ID          string `json:"id"`
+	Type        string `json:"type"`
+	DisplayName string `json:"display_name"`
+	CreatedAt   string `json:"created_at"`
+}
+
+// anthropicModelList is the GET /v1/models response.
+type anthropicModelList struct {
+	Data    []anthropicModelEntry `json:"data"`
+	FirstID string                `json:"first_id"`
+	LastID  string                `json:"last_id"`
+	HasMore bool                  `json:"has_more"`
+}
+
+// ModelsHandler handles GET /v1/models — returns a stub list containing the
+// local backend model so Claude Code CLI model-validation passes.
+func (h *Handler) ModelsHandler(c *fiber.Ctx) error {
+	model := localModel()
+	entry := anthropicModelEntry{
+		ID:          model,
+		Type:        "model",
+		DisplayName: model,
+		CreatedAt:   "2024-01-01T00:00:00Z",
+	}
+	// Also surface well-known Anthropic aliases so Claude Code CLI doesn't
+	// reject its own default model name during pre-flight validation.
+	aliases := []string{
+		"claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-4-5",
+		"claude-3-5-sonnet-20241022", "claude-3-opus-20240229",
+	}
+	entries := []anthropicModelEntry{entry}
+	for _, a := range aliases {
+		entries = append(entries, anthropicModelEntry{
+			ID: a, Type: "model", DisplayName: a + " → " + model,
+			CreatedAt: "2024-01-01T00:00:00Z",
+		})
+	}
+	return c.JSON(anthropicModelList{
+		Data:    entries,
+		FirstID: entries[0].ID,
+		LastID:  entries[len(entries)-1].ID,
+		HasMore: false,
+	})
+}
+
+// ModelDetailHandler handles GET /v1/models/:model — returns a single model
+// entry. Any model name is accepted; all route through the local backend.
+func (h *Handler) ModelDetailHandler(c *fiber.Ctx) error {
+	requestedModel := c.Params("model")
+	return c.JSON(anthropicModelEntry{
+		ID:          requestedModel,
+		Type:        "model",
+		DisplayName: requestedModel + " → " + localModel() + " (via CAW)",
+		CreatedAt:   "2024-01-01T00:00:00Z",
+	})
+}

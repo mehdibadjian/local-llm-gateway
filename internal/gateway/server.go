@@ -56,7 +56,9 @@ func NewServer(backend adapter.InferenceBackend, rdb *redis.Client, session *mem
 	// All /v1 routes require auth + rate limiting.
 	api := app.Group("/v1", security.NewAuthMiddleware(), rateLimiter.Middleware())
 	api.Post("/chat/completions", h.ChatHandler)
-	api.Post("/messages", h.MessagesHandler) // Anthropic Messages API — used by Claude Code CLI
+	api.Post("/messages", h.MessagesHandler)           // Anthropic Messages API — used by Claude Code CLI
+	api.Get("/models", h.ModelsHandler)                // Anthropic/OpenAI model list probe
+	api.Get("/models/:model", h.ModelDetailHandler)    // per-model detail probe
 	api.Post("/documents", h.EnqueueDocument)
 	api.Get("/documents/:id/status", h.DocumentStatus)
 	api.Delete("/sessions/:id", h.DeleteSession)
