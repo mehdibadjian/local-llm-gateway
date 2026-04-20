@@ -17,6 +17,8 @@ type ChatCompletionRequest struct {
 	Domain     string `json:"domain,omitempty"`
 }
 
+// ResponseFormat mirrors the OpenAI response_format field.
+// Defined here (gateway-owned) and re-exported for use in orchestration.
 type ResponseFormat struct {
 	Type string `json:"type"` // "json_object" or "text"
 }
