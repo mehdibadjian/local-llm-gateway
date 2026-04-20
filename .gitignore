@@ -39,7 +39,6 @@ sandbox_*
 secrets/
 
 # IDE
-.vscode/
 .idea/
 *.swp
 *.swo
