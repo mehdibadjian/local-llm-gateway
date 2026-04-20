@@ -17,11 +17,11 @@ import (
 
 // AnthropicRequest mirrors the Anthropic POST /v1/messages request schema.
 type AnthropicRequest struct {
-	Model     string             `json:"model"`
-	MaxTokens int                `json:"max_tokens"`
-	Messages  []AnthropicMessage `json:"messages"`
-	System    string             `json:"system,omitempty"`
-	Stream    bool               `json:"stream,omitempty"`
+	Model     string                 `json:"model"`
+	MaxTokens int                    `json:"max_tokens"`
+	Messages  []AnthropicMessage     `json:"messages"`
+	System    AnthropicMessageContent `json:"system"`
+	Stream    bool                   `json:"stream,omitempty"`
 }
 
 // AnthropicMessage is a single message in the Anthropic Messages API.
@@ -159,8 +159,8 @@ func (h *Handler) MessagesHandler(c *fiber.Ctx) error {
 	// Convert Anthropic messages → adapter.Message slice.
 	// Prepend system prompt as a system-role message if present.
 	msgs := make([]adapter.Message, 0, len(req.Messages)+1)
-	if req.System != "" {
-		msgs = append(msgs, adapter.Message{Role: "system", Content: req.System})
+	if req.System.Text != "" {
+		msgs = append(msgs, adapter.Message{Role: "system", Content: req.System.Text})
 	}
 	for _, m := range req.Messages {
 		msgs = append(msgs, adapter.Message{Role: m.Role, Content: m.Content.Text})

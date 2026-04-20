@@ -31,7 +31,7 @@ func mockBackendForMessages(content string) *adapter.MockInferenceBackend {
 func TestMessagesHandler_NonStreaming(t *testing.T) {
 	app, _ := newTestServer(t, mockBackendForMessages("Hello from CAW!"))
 
-	// content as plain string
+	// content as plain string, system as plain string
 	body := `{"model":"claude-3-5-sonnet-20241022","max_tokens":1024,"messages":[{"role":"user","content":"hi"}]}`
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -98,6 +98,7 @@ func TestMessagesHandler_SystemPromptIncluded(t *testing.T) {
 	}
 	app, _ := newTestServer(t, backend)
 
+	// system as plain string
 	body := `{"model":"claude-3-5-sonnet-20241022","max_tokens":512,"system":"You are a pirate.","messages":[{"role":"user","content":"hello"}]}`
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -111,6 +112,33 @@ func TestMessagesHandler_SystemPromptIncluded(t *testing.T) {
 	assert.Equal(t, "system", capturedMsgs[0].Role)
 	assert.Equal(t, "You are a pirate.", capturedMsgs[0].Content)
 	assert.Equal(t, "user", capturedMsgs[1].Role)
+}
+
+func TestMessagesHandler_SystemAsArray(t *testing.T) {
+	var capturedSystem string
+	backend := &adapter.MockInferenceBackend{
+		GenerateFn: func(_ context.Context, req *adapter.GenerateRequest) (*adapter.GenerateResponse, error) {
+			if len(req.Messages) > 0 && req.Messages[0].Role == "system" {
+				capturedSystem = req.Messages[0].Content
+			}
+			return &adapter.GenerateResponse{
+				ID: "msg_test", Model: "gemma:2b",
+				Choices: []adapter.Choice{{Message: adapter.Message{Role: "assistant", Content: "ok"}}},
+			}, nil
+		},
+	}
+	app, _ := newTestServer(t, backend)
+
+	// system as array of content blocks — what Claude Code CLI actually sends
+	body := `{"model":"claude-sonnet-4-6","max_tokens":512,"system":[{"type":"text","text":"You are a helpful assistant."}],"messages":[{"role":"user","content":[{"type":"text","text":"hi"}]}]}`
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", "test-key")
+
+	resp, err := app.Test(req, 5000)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, "You are a helpful assistant.", capturedSystem)
 }
 
 func TestMessagesHandler_EmptyMessagesReturns422(t *testing.T) {
