@@ -1,14 +1,40 @@
-# macOS
+# ── macOS ────────────────────────────────────────────────────────────────────
 .DS_Store
 .AppleDouble
 .LSOverride
+Icon?
+._*
 
-# Python
+# ── Go ───────────────────────────────────────────────────────────────────────
+# Compiled binaries
+/caw
+/wrapper
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test output
+*.test
+*.out
+
+# Go coverage
+coverage.txt
+coverage.html
+
+# Go workspace (not committed)
+go.work
+go.work.sum
+
+# Vendor (if not vendoring)
+vendor/
+
+# ── Python (embed_service) ────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
-.Python
 *.egg
 *.egg-info/
 dist/
@@ -25,33 +51,62 @@ pip-wheel-metadata/
 venv/
 env/
 ENV/
+.Python
 
 # Virtual environments (sandbox)
 .sandbox/
-sandbox_*
+sandbox_*/
 
-# Environment & secrets
+# ── Environment & secrets ────────────────────────────────────────────────────
 .env
 .env.*
 !.env.example
 *.pem
 *.key
+*.p12
+*.pfx
 secrets/
+kubeconfig
+kubeconfig.*
 
-# IDE
+# ── Docker ───────────────────────────────────────────────────────────────────
+.docker/
+
+# ── Helm ─────────────────────────────────────────────────────────────────────
+*.tgz
+charts/*/charts/
+
+# ── IDE & editors ────────────────────────────────────────────────────────────
 .idea/
+.vscode/settings.json
+.vscode/launch.json
 *.swp
 *.swo
+*~
 
-# Testing & coverage
+# ── Testing & coverage ───────────────────────────────────────────────────────
 .pytest_cache/
 .coverage
 htmlcov/
 .tox/
+junit.xml
+test-results/
+report.xml
 
-# Logs
+# ── Benchmark output ─────────────────────────────────────────────────────────
+scripts/benchmark/results/
+*.benchmark.json
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
 *.log
 logs/
 
-# OS
+# ── OS ───────────────────────────────────────────────────────────────────────
 Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ── Temporary files ──────────────────────────────────────────────────────────
+*.tmp
+*.temp
+tmp/
