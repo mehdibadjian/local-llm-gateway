@@ -7,6 +7,19 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// HasQdrantPoint returns true if any chunk row has the given qdrant_point_id.
+func (p *PGStore) HasQdrantPoint(ctx context.Context, qdrantPointID string) (bool, error) {
+	var exists bool
+	err := p.pool.QueryRow(ctx,
+		"SELECT EXISTS(SELECT 1 FROM chunks WHERE qdrant_point_id = $1)",
+		qdrantPointID,
+	).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("has qdrant point: %w", err)
+	}
+	return exists, nil
+}
+
 // Document is the metadata record for an ingested document.
 type Document struct {
 	ID          string

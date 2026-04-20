@@ -194,3 +194,50 @@ func validateDomain(domain string) error {
 	}
 	return fmt.Errorf("invalid domain %q: must be one of %v", domain, validDomains)
 }
+
+// ScrollPoints paginates through all points in a domain collection.
+// Returns (points, nextOffset, error). nextOffset is empty when there are no more pages.
+func (q *QdrantClient) ScrollPoints(ctx context.Context, domain string, limit int, offset string) ([]QdrantPoint, string, error) {
+	if err := validateDomain(domain); err != nil {
+		return nil, "", err
+	}
+	body := map[string]interface{}{
+		"limit":        limit,
+		"with_payload": true,
+		"with_vector":  true,
+	}
+	if offset != "" {
+		body["offset"] = offset
+	}
+
+	var resp struct {
+		Result struct {
+			Points []struct {
+				ID      string                 `json:"id"`
+				Vector  []float32              `json:"vector"`
+				Payload map[string]interface{} `json:"payload"`
+			} `json:"points"`
+			NextPageOffset string `json:"next_page_offset"`
+		} `json:"result"`
+	}
+	if err := q.do(ctx, http.MethodPost, "/collections/"+collectionName(domain)+"/points/scroll", body, &resp); err != nil {
+		return nil, "", err
+	}
+
+	points := make([]QdrantPoint, 0, len(resp.Result.Points))
+	for _, p := range resp.Result.Points {
+		points = append(points, QdrantPoint{ID: p.ID, Vector: p.Vector, Payload: p.Payload})
+	}
+	return points, resp.Result.NextPageOffset, nil
+}
+
+// DeletePoints removes a set of point IDs from a domain collection.
+func (q *QdrantClient) DeletePoints(ctx context.Context, domain string, ids []string) error {
+	if err := validateDomain(domain); err != nil {
+		return err
+	}
+	body := map[string]interface{}{
+		"points": ids,
+	}
+	return q.do(ctx, http.MethodPost, "/collections/"+collectionName(domain)+"/points/delete", body, nil)
+}
