@@ -1,0 +1,18 @@
+{
+  "mmlu": {
+    "score": 90,
+    "correct": 9,
+    "total": 10,
+    "gpt35_baseline": 70,
+    "gemma_baseline": 35
+  },
+  "humaneval": {
+    "score": 100,
+    "correct": 5,
+    "total": 5,
+    "gpt35_baseline": 48,
+    "gemma_baseline": 12
+  },
+  "gap_closed_pct": 200.79365079365078,
+  "run_at": "2026-04-20T07:33:43.958663Z"
+}
