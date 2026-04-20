@@ -11,8 +11,9 @@ type Tool struct {
 	Name         string          `json:"name" db:"name"`
 	Description  string          `json:"description" db:"description"`
 	InputSchema  json.RawMessage `json:"input_schema" db:"input_schema"`
-	ExecutorType string          `json:"executor_type" db:"executor_type"` // builtin|subprocess|http
+	ExecutorType string          `json:"executor_type" db:"executor_type"` // builtin|subprocess|http|plugin
 	EndpointURL  string          `json:"endpoint_url,omitempty" db:"endpoint_url"`
+	Source       string          `json:"source,omitempty" db:"source"` // "plugin" for community plugins
 	Enabled      bool            `json:"enabled" db:"enabled"`
 	CreatedAt    time.Time       `json:"created_at" db:"created_at"`
 }
@@ -37,4 +38,5 @@ var ValidExecutorTypes = map[string]bool{
 	"builtin":    true,
 	"subprocess": true,
 	"http":       true,
+	"plugin":     true,
 }

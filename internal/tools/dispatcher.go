@@ -35,6 +35,8 @@ func (d *Dispatcher) Execute(ctx context.Context, call ToolCall) (*ToolResult, e
 		return d.sandbox.Run(ctx, tool, call)
 	case "http":
 		return d.executeHTTP(ctx, tool, call)
+	case "plugin":
+		return d.executePlugin(ctx, tool, call)
 	}
 	return nil, fmt.Errorf("unknown executor type: %s", tool.ExecutorType)
 }
@@ -86,6 +88,33 @@ func (d *Dispatcher) executeHTTP(ctx context.Context, tool *Tool, call ToolCall)
 	return &ToolResult{
 		ToolCallID: call.ID,
 		Output:     string(body),
+		DurationMs: time.Since(start).Milliseconds(),
+	}, nil
+}
+
+// executePlugin forks the plugin binary, passing call input as a PluginRequest and
+// returning the PluginResponse result. Non-zero exit or timeout returns an error
+// in the ToolResult without crashing the main process.
+func (d *Dispatcher) executePlugin(ctx context.Context, tool *Tool, call ToolCall) (*ToolResult, error) {
+	start := time.Now()
+
+	var params map[string]interface{}
+	if err := json.Unmarshal(call.Input, &params); err != nil {
+		params = make(map[string]interface{})
+	}
+
+	pe := &PluginExecutor{BinaryPath: tool.EndpointURL, Timeout: 5 * time.Second}
+	output, err := pe.Execute(ctx, tool.Name, params)
+	if err != nil {
+		return &ToolResult{
+			ToolCallID: call.ID,
+			Error:      err.Error(),
+			DurationMs: time.Since(start).Milliseconds(),
+		}, nil
+	}
+	return &ToolResult{
+		ToolCallID: call.ID,
+		Output:     output,
 		DurationMs: time.Since(start).Milliseconds(),
 	}, nil
 }
