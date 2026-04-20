@@ -253,3 +253,103 @@ func TestCodeFeedbackLoop_DetectsPythonBlock(t *testing.T) {
 	assert.True(t, strings.Contains(content, "```python"))
 }
 
+// ── extractFunctionNames ─────────────────────────────────────────────────────
+
+func TestExtractFunctionNames_SingleFunction(t *testing.T) {
+	code := "def merge_sorted(a, b):\n    return a + b\n"
+	names := orchestration.ExtractFunctionNames(code)
+	require.Len(t, names, 1)
+	assert.Equal(t, "merge_sorted", names[0])
+}
+
+func TestExtractFunctionNames_MultipleFunctions(t *testing.T) {
+	code := "def foo():\n    pass\ndef bar(x):\n    return x\n"
+	names := orchestration.ExtractFunctionNames(code)
+	require.Len(t, names, 2)
+	assert.Contains(t, names, "foo")
+	assert.Contains(t, names, "bar")
+}
+
+func TestExtractFunctionNames_NoDuplicates(t *testing.T) {
+	code := "def foo():\n    pass\ndef foo():\n    pass\n"
+	names := orchestration.ExtractFunctionNames(code)
+	assert.Len(t, names, 1)
+}
+
+func TestExtractFunctionNames_NoFunctions(t *testing.T) {
+	code := "x = 1 + 2\nprint(x)\n"
+	names := orchestration.ExtractFunctionNames(code)
+	assert.Empty(t, names)
+}
+
+// ── runCodeWithAssertions ────────────────────────────────────────────────────
+
+func TestRunCodeWithAssertions_PassingAssertions(t *testing.T) {
+	err := orchestration.RunCodeWithAssertions(
+		"def add(a, b):\n    return a + b\n",
+		"assert add(1, 2) == 3\nassert add(0, 0) == 0\nassert add(-1, 1) == 0\n",
+	)
+	assert.NoError(t, err)
+}
+
+func TestRunCodeWithAssertions_FailingAssertionReturnsError(t *testing.T) {
+	// Buggy merge_sorted (if/elif drops tail) — edge case catches it.
+	buggyCode := `
+def merge_sorted(list1, list2):
+    merged = []
+    i, j = 0, 0
+    while i < len(list1) and j < len(list2):
+        if list1[i] <= list2[j]:
+            merged.append(list1[i]); i += 1
+        else:
+            merged.append(list2[j]); j += 1
+    if i == len(list1):
+        merged.extend(list1[i:])
+    elif j == len(list2):
+        merged.extend(list2[j:])
+    return merged
+`
+	assertions := "assert merge_sorted([1, 3, 5], [2, 4]) == [1, 2, 3, 4, 5]\n"
+	err := orchestration.RunCodeWithAssertions(buggyCode, assertions)
+	assert.Error(t, err, "edge case should catch the if/elif bug")
+}
+
+func TestRunCodeWithAssertions_CorrectCodePasses(t *testing.T) {
+	correctCode := `
+def merge_sorted(list1, list2):
+    merged = []
+    i, j = 0, 0
+    while i < len(list1) and j < len(list2):
+        if list1[i] <= list2[j]:
+            merged.append(list1[i]); i += 1
+        else:
+            merged.append(list2[j]); j += 1
+    merged.extend(list1[i:])
+    merged.extend(list2[j:])
+    return merged
+`
+	assertions := strings.Join([]string{
+		"assert merge_sorted([], []) == []",
+		"assert merge_sorted([1], []) == [1]",
+		"assert merge_sorted([], [2]) == [2]",
+		"assert merge_sorted([1, 3, 5], [2, 4]) == [1, 2, 3, 4, 5]",
+		"assert merge_sorted([1, 2], [3, 4, 5]) == [1, 2, 3, 4, 5]",
+	}, "\n")
+	err := orchestration.RunCodeWithAssertions(correctCode, assertions)
+	assert.NoError(t, err)
+}
+
+// ── stripCodeFences ──────────────────────────────────────────────────────────
+
+func TestStripCodeFences_RemovesFences(t *testing.T) {
+	input := "```python\nassert foo() == 1\n```"
+	got := orchestration.StripCodeFences(input)
+	assert.NotContains(t, got, "```")
+	assert.Contains(t, got, "assert foo() == 1")
+}
+
+func TestStripCodeFences_NoFencesUnchanged(t *testing.T) {
+	input := "assert foo() == 1"
+	assert.Equal(t, input, orchestration.StripCodeFences(input))
+}
+
