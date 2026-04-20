@@ -8,17 +8,44 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // Dispatcher routes ToolCall executions to the correct executor backend.
 type Dispatcher struct {
-	registry *Registry
-	sandbox  *Sandbox
+	registry  *Registry
+	sandbox   *Sandbox
+	webSearch *WebSearchExecutor
+	webFetch  *WebFetchExecutor
+}
+
+// webSearchInput is the JSON input schema for the web_search builtin.
+type webSearchInput struct {
+	Query      string `json:"query"`
+	MaxResults int    `json:"max_results"`
+}
+
+// webFetchInput is the JSON input schema for the web_fetch builtin.
+type webFetchInput struct {
+	URL      string `json:"url"`
+	MaxBytes int    `json:"max_bytes"`
 }
 
 // NewDispatcher constructs a Dispatcher.
 func NewDispatcher(registry *Registry, sandbox *Sandbox) *Dispatcher {
 	return &Dispatcher{registry: registry, sandbox: sandbox}
+}
+
+// NewDispatcherWithLearn constructs a Dispatcher with web search/fetch executors
+// that auto-enqueue learned content into the RAG ingest pipeline.
+func NewDispatcherWithLearn(registry *Registry, sandbox *Sandbox, rdb *redis.Client) *Dispatcher {
+	return &Dispatcher{
+		registry:  registry,
+		sandbox:   sandbox,
+		webSearch: NewWebSearchExecutor(rdb),
+		webFetch:  NewWebFetchExecutor(rdb),
+	}
 }
 
 // Execute resolves the named tool and delegates to the appropriate executor.
@@ -41,14 +68,68 @@ func (d *Dispatcher) Execute(ctx context.Context, call ToolCall) (*ToolResult, e
 	return nil, fmt.Errorf("unknown executor type: %s", tool.ExecutorType)
 }
 
-// executeBuiltin is the echo built-in: returns the raw input as output.
-func (d *Dispatcher) executeBuiltin(_ context.Context, _ *Tool, call ToolCall) (*ToolResult, error) {
+// executeBuiltin dispatches to the appropriate builtin handler.
+func (d *Dispatcher) executeBuiltin(ctx context.Context, tool *Tool, call ToolCall) (*ToolResult, error) {
 	start := time.Now()
-	return &ToolResult{
-		ToolCallID: call.ID,
-		Output:     string(call.Input),
-		DurationMs: time.Since(start).Milliseconds(),
-	}, nil
+
+	switch tool.Name {
+	case "web_search":
+		return d.executeWebSearch(ctx, call, start)
+	case "web_fetch":
+		return d.executeWebFetch(ctx, call, start)
+	default:
+		// echo builtin: returns raw input
+		return &ToolResult{
+			ToolCallID: call.ID,
+			Output:     string(call.Input),
+			DurationMs: time.Since(start).Milliseconds(),
+		}, nil
+	}
+}
+
+func (d *Dispatcher) executeWebSearch(ctx context.Context, call ToolCall, start time.Time) (*ToolResult, error) {
+	var in webSearchInput
+	if err := json.Unmarshal(call.Input, &in); err != nil {
+		return &ToolResult{ToolCallID: call.ID, Error: "invalid input: " + err.Error(), DurationMs: time.Since(start).Milliseconds()}, nil
+	}
+	if in.Query == "" {
+		return &ToolResult{ToolCallID: call.ID, Error: "query is required", DurationMs: time.Since(start).Milliseconds()}, nil
+	}
+
+	exec := d.webSearch
+	if exec == nil {
+		exec = NewWebSearchExecutor(nil)
+	}
+
+	results, err := exec.Execute(ctx, in.Query, in.MaxResults)
+	if err != nil {
+		return &ToolResult{ToolCallID: call.ID, Error: err.Error(), DurationMs: time.Since(start).Milliseconds()}, nil
+	}
+
+	out, _ := json.Marshal(results)
+	return &ToolResult{ToolCallID: call.ID, Output: string(out), DurationMs: time.Since(start).Milliseconds()}, nil
+}
+
+func (d *Dispatcher) executeWebFetch(ctx context.Context, call ToolCall, start time.Time) (*ToolResult, error) {
+	var in webFetchInput
+	if err := json.Unmarshal(call.Input, &in); err != nil {
+		return &ToolResult{ToolCallID: call.ID, Error: "invalid input: " + err.Error(), DurationMs: time.Since(start).Milliseconds()}, nil
+	}
+	if in.URL == "" {
+		return &ToolResult{ToolCallID: call.ID, Error: "url is required", DurationMs: time.Since(start).Milliseconds()}, nil
+	}
+
+	exec := d.webFetch
+	if exec == nil {
+		exec = NewWebFetchExecutor(nil)
+	}
+
+	text, err := exec.Execute(ctx, in.URL, in.MaxBytes)
+	if err != nil {
+		return &ToolResult{ToolCallID: call.ID, Error: err.Error(), DurationMs: time.Since(start).Milliseconds()}, nil
+	}
+
+	return &ToolResult{ToolCallID: call.ID, Output: text, DurationMs: time.Since(start).Milliseconds()}, nil
 }
 
 // executeHTTP POSTs the call input JSON to the tool's EndpointURL.

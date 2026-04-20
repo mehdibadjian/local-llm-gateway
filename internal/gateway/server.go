@@ -80,6 +80,13 @@ func (s *Server) RegisterToolRoutes(th *tools.ToolHandler) {
 	s.api.Post("/tools", th.RegisterTool)
 }
 
+// RegisterMCPRoute mounts the MCP JSON-RPC 2.0 endpoint at POST /mcp.
+// This allows Claude Code CLI and other MCP clients to discover and call CAW tools.
+// The endpoint is authenticated with the same Bearer token / x-api-key as /v1 routes.
+func (s *Server) RegisterMCPRoute(handler fiber.Handler) {
+	s.app.Post("/mcp", security.NewAuthMiddleware(), handler)
+}
+
 // Listen starts the HTTP server on the given address (e.g. ":8080").
 func (s *Server) Listen(addr string) error {
 	return s.app.Listen(addr)
