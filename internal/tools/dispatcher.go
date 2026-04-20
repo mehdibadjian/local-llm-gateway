@@ -49,7 +49,16 @@ func NewDispatcherWithLearn(registry *Registry, sandbox *Sandbox, rdb *redis.Cli
 }
 
 // Execute resolves the named tool and delegates to the appropriate executor.
+// Built-in tools (web_search, web_fetch) are handled directly without a registry lookup.
 func (d *Dispatcher) Execute(ctx context.Context, call ToolCall) (*ToolResult, error) {
+	// Short-circuit for self-learning builtins — they are not stored in the DB.
+	switch call.ToolName {
+	case "web_search":
+		return d.executeWebSearch(ctx, call, time.Now())
+	case "web_fetch":
+		return d.executeWebFetch(ctx, call, time.Now())
+	}
+
 	tool, err := d.registry.Get(ctx, call.ToolName)
 	if err != nil {
 		return nil, fmt.Errorf("tool not found: %w", err)

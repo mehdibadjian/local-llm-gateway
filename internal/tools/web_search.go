@@ -4,11 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
@@ -86,18 +84,33 @@ func (e *WebSearchExecutor) learn(ctx context.Context, query string, results []S
 	})
 }
 
-// ── DuckDuckGo ────────────────────────────────────────────────────────────────
+// ── DuckDuckGo Instant Answer API ─────────────────────────────────────────────
+// Uses the free JSON API (no bot detection, no API key needed).
+// Best for factual / named-entity queries; returns abstract + related topics.
 
-var (
-	ddgResultRe  = regexp.MustCompile(`class="result__title"[^>]*>.*?<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>`)
-	ddgSnippetRe = regexp.MustCompile(`class="result__snippet"[^>]*>(.*?)</span>`)
-	htmlTagRe    = regexp.MustCompile(`<[^>]+>`)
-)
+type ddgIAResponse struct {
+	AbstractText   string `json:"AbstractText"`
+	AbstractURL    string `json:"AbstractURL"`
+	AbstractSource string `json:"AbstractSource"`
+	Results        []struct {
+		Text      string `json:"Text"`
+		FirstURL  string `json:"FirstURL"`
+	} `json:"Results"`
+	RelatedTopics []ddgRelatedTopic `json:"RelatedTopics"`
+}
+
+type ddgRelatedTopic struct {
+	Text     string `json:"Text"`
+	FirstURL string `json:"FirstURL"`
+	Topics   []ddgRelatedTopic `json:"Topics"` // nested groups
+}
 
 func (e *WebSearchExecutor) searchDDG(ctx context.Context, query string, max int) ([]SearchResult, error) {
-	u := "https://html.duckduckgo.com/html/?q=" + url.QueryEscape(query)
+	u := "https://api.duckduckgo.com/?q=" + url.QueryEscape(query) +
+		"&format=json&no_html=1&skip_disambig=1&t=caw-bot"
+
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; CAW-bot/1.0)")
+	req.Header.Set("User-Agent", "CAW-bot/1.0")
 
 	resp, err := e.client.Do(req)
 	if err != nil {
@@ -105,37 +118,46 @@ func (e *WebSearchExecutor) searchDDG(ctx context.Context, query string, max int
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("ddg read: %w", err)
+	var r ddgIAResponse
+	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+		return nil, fmt.Errorf("ddg decode: %w", err)
 	}
-	html := string(body)
-
-	titleMatches := ddgResultRe.FindAllStringSubmatch(html, max)
-	snippetMatches := ddgSnippetRe.FindAllStringSubmatch(html, max)
 
 	var results []SearchResult
-	for i, m := range titleMatches {
-		if i >= max {
-			break
+
+	// Include the main abstract if present.
+	if r.AbstractText != "" && len(results) < max {
+		results = append(results, SearchResult{
+			Title:   r.AbstractSource,
+			URL:     r.AbstractURL,
+			Snippet: r.AbstractText,
+		})
+	}
+
+	// Flatten related topics (skip category headers that have no URL).
+	var flatTopics []ddgRelatedTopic
+	for _, t := range r.RelatedTopics {
+		if t.FirstURL != "" {
+			flatTopics = append(flatTopics, t)
 		}
-		snippet := ""
-		if i < len(snippetMatches) {
-			snippet = strings.TrimSpace(htmlTagRe.ReplaceAllString(snippetMatches[i][1], ""))
-		}
-		title := strings.TrimSpace(htmlTagRe.ReplaceAllString(m[2], ""))
-		rawURL := m[1]
-		// DDG wraps URLs in redirects — extract the real uddg= parameter.
-		if parsed, err := url.Parse(rawURL); err == nil {
-			if real := parsed.Query().Get("uddg"); real != "" {
-				rawURL = real
+		for _, sub := range t.Topics {
+			if sub.FirstURL != "" {
+				flatTopics = append(flatTopics, sub)
 			}
 		}
-		if title == "" || rawURL == "" {
-			continue
-		}
-		results = append(results, SearchResult{Title: title, URL: rawURL, Snippet: snippet})
 	}
+
+	for _, t := range flatTopics {
+		if len(results) >= max {
+			break
+		}
+		title := t.Text
+		if idx := strings.Index(title, " — "); idx > 0 {
+			title = title[:idx]
+		}
+		results = append(results, SearchResult{Title: title, URL: t.FirstURL, Snippet: t.Text})
+	}
+
 	return results, nil
 }
 
