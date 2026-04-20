@@ -1,4 +1,4 @@
-# Darwin-Model — Documentation Index
+# local-llm-gateway — Documentation Index
 
 ## Reference
 
