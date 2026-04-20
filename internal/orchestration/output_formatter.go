@@ -15,6 +15,12 @@ type OutputFormatter struct {
 	backend adapter.InferenceBackend
 }
 
+// Backend returns the underlying inference backend (used by Pipeline to share
+// the same backend with CoT decomposer and code-feedback loop).
+func (f *OutputFormatter) Backend() adapter.InferenceBackend {
+	return f.backend
+}
+
 // NewOutputFormatter returns an OutputFormatter backed by the given inference backend.
 func NewOutputFormatter(backend adapter.InferenceBackend) *OutputFormatter {
 	return &OutputFormatter{backend: backend}

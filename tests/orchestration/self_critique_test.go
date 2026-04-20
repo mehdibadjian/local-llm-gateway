@@ -55,10 +55,14 @@ func TestShouldCritique_NotTriggered(t *testing.T) {
 }
 
 func TestSelfCritiquer_AppliesCritiquePrompt(t *testing.T) {
-	var capturedContent string
+	var firstCallContent string
+	callCount := 0
 	mock := &adapter.MockInferenceBackend{
 		GenerateFn: func(_ context.Context, req *adapter.GenerateRequest) (*adapter.GenerateResponse, error) {
-			capturedContent = req.Messages[0].Content
+			if callCount == 0 {
+				firstCallContent = req.Messages[0].Content
+			}
+			callCount++
 			return &adapter.GenerateResponse{
 				Choices: []adapter.Choice{{Message: adapter.Message{Role: "assistant", Content: "verified response"}}},
 			}, nil
@@ -70,7 +74,7 @@ func TestSelfCritiquer_AppliesCritiquePrompt(t *testing.T) {
 	result, err := sc.Critique(context.Background(), "original response", req)
 
 	require.NoError(t, err)
-	assert.Equal(t, "verified response", result)
-	assert.Contains(t, capturedContent, "original response", "critique prompt must include the original content")
-	assert.Contains(t, capturedContent, "accuracy and safety")
+	assert.NotEmpty(t, result)
+	assert.Contains(t, firstCallContent, "original response", "scoring prompt must include the original content")
+	assert.Contains(t, firstCallContent, "1 to 10", "scoring prompt must ask for a numeric score")
 }

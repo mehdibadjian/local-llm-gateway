@@ -9,10 +9,12 @@ import (
 type Intent string
 
 const (
-	IntentSimpleGenerate   Intent = "simple-generate"
-	IntentStructuredOutput Intent = "structured-output"
-	IntentAgentLoop        Intent = "agent-loop"
-	IntentRAGQuery         Intent = "rag-query"
+	IntentSimpleGenerate    Intent = "simple-generate"
+	IntentStructuredOutput  Intent = "structured-output"
+	IntentAgentLoop         Intent = "agent-loop"
+	IntentRAGQuery          Intent = "rag-query"
+	IntentComplexReasoning  Intent = "complex-reasoning" // multi-step CoT
+	IntentCodeGeneration    Intent = "code-generation"   // code + execution feedback
 )
 
 // OrchestrationRequest carries all inputs the pipeline needs.
@@ -28,6 +30,8 @@ type OrchestrationRequest struct {
 	Critique       bool // x-caw-options.critique
 	RAGDegraded    bool // x-caw-rag-degraded
 	SideEffect     bool // tool wrote external state
+	CoTEnabled     bool // force chain-of-thought even for simple queries
+	MaxCritique    int  // max scored-critique rounds (0 = use default 3)
 }
 
 // OrchestrationResult carries all outputs the pipeline produces.
@@ -38,6 +42,10 @@ type OrchestrationResult struct {
 	FormatError     bool // x-caw-format-error
 	RAGDegraded     bool // x-caw-rag-degraded
 	CritiqueApplied bool
+	CritiqueRounds  int    // how many critique passes were used
+	CoTApplied      bool   // whether chain-of-thought decomposition was used
+	CodeFeedback    bool   // whether code-execution feedback loop ran
+	CritiqueScore   int    // final critique score (0 if not critiqued)
 }
 
 // CompressionResult holds the outcome of a context-management pass.
