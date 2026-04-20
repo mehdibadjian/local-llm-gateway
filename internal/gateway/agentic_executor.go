@@ -73,6 +73,7 @@ func RunAgentLoop(
 	})
 
 	nudges := 0 // consecutive turns with no tool call
+	lastCmd := "" // duplicate detection
 	for i := 0; i < maxAgentSteps; i++ {
 		req := &adapter.GenerateRequest{
 			Model:     model,
@@ -108,6 +109,13 @@ func RunAgentLoop(
 			continue
 		}
 		nudges = 0
+
+		// Duplicate command detection — break infinite retry loop.
+		cmdKey := string(tc.Input)
+		if cmdKey == lastCmd {
+			return buildFinalAnswer("(stopped: same command repeated)", steps), steps, nil
+		}
+		lastCmd = cmdKey
 
 		// Strip DONE lines from command; remember if DONE was present.
 		tc, hasDone, doneMsg := cleanToolCallWithDone(tc)
@@ -263,10 +271,11 @@ func executeTool(ctx context.Context, tc *toolCallResult, workdir string) (strin
 }
 
 // executeBash runs a shell command and returns combined stdout+stderr (capped).
+// If the command looks like a Python script (shebang or pure Python syntax), it
+// writes it to a temp file and runs it with python3 instead of bash.
 func executeBash(ctx context.Context, input json.RawMessage, workdir string) (string, error) {
 	var args map[string]interface{}
 	if err := json.Unmarshal(input, &args); err != nil {
-		// Raw string fallback
 		args = map[string]interface{}{"command": strings.Trim(string(input), `"`)}
 	}
 
@@ -284,14 +293,29 @@ func executeBash(ctx context.Context, input json.RawMessage, workdir string) (st
 	tctx, cancel := context.WithTimeout(ctx, cmdTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(tctx, "bash", "-c", command)
+	// Detect Python scripts — run with python3 to avoid bash syntax errors.
+	var cmd *exec.Cmd
+	if isPythonScript(command) {
+		tmp, err := os.CreateTemp("", "caw_*.py")
+		if err != nil {
+			return "", fmt.Errorf("create temp py: %w", err)
+		}
+		defer os.Remove(tmp.Name())
+		if _, err := tmp.WriteString(command); err != nil {
+			return "", fmt.Errorf("write temp py: %w", err)
+		}
+		tmp.Close()
+		cmd = exec.CommandContext(tctx, "python3", tmp.Name())
+	} else {
+		cmd = exec.CommandContext(tctx, "bash", "-c", command)
+	}
 	cmd.Dir = workdir
 
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
 
-	_ = cmd.Run() // capture output even on non-zero exit
+	_ = cmd.Run()
 
 	out := buf.String()
 	if len(out) > maxOutputBytes {
@@ -301,6 +325,22 @@ func executeBash(ctx context.Context, input json.RawMessage, workdir string) (st
 		out = "(no output)"
 	}
 	return out, nil
+}
+
+// isPythonScript returns true when the command looks like Python source (not bash).
+func isPythonScript(cmd string) bool {
+	trimmed := strings.TrimSpace(cmd)
+	if strings.HasPrefix(trimmed, "#!/usr/bin/env python") ||
+		strings.HasPrefix(trimmed, "#!/usr/bin/python") {
+		return true
+	}
+	// Multi-line blocks that contain pure Python keywords at the start of a line
+	pythonOnly := regexp.MustCompile(`(?m)^(def |class |import |from |async def |@\w+)`)
+	// Make sure it's NOT a bash command that happens to have a def
+	bashOnly := regexp.MustCompile(`(?m)^(echo |cat |ls |cd |mkdir |python3? |pip |apt|curl|wget|chmod|export)`)
+	hasPython := pythonOnly.MatchString(trimmed)
+	hasBash := bashOnly.MatchString(trimmed)
+	return hasPython && !hasBash
 }
 
 // executeWriteFile writes content to a file, creating parent dirs as needed.
