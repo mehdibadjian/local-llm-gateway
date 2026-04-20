@@ -110,3 +110,25 @@ func TestAuthMiddleware_InvalidFormat_Returns401(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
 }
+
+func TestAuthMiddleware_XApiKey_AcceptsAnthropicHeader(t *testing.T) {
+t.Setenv("CAW_API_KEY", "test-secret-key")
+app := newAuthApp(t)
+
+req := httptest.NewRequest("GET", "/test", nil)
+req.Header.Set("x-api-key", "test-secret-key") // Anthropic SDK style
+resp, err := app.Test(req)
+require.NoError(t, err)
+assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+}
+
+func TestAuthMiddleware_XApiKey_WrongKey_Returns403(t *testing.T) {
+t.Setenv("CAW_API_KEY", "test-secret-key")
+app := newAuthApp(t)
+
+req := httptest.NewRequest("GET", "/test", nil)
+req.Header.Set("x-api-key", "wrong-key")
+resp, err := app.Test(req)
+require.NoError(t, err)
+assert.Equal(t, fiber.StatusForbidden, resp.StatusCode)
+}
