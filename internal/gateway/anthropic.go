@@ -202,13 +202,181 @@ func (h *Handler) MessagesHandler(c *fiber.Ctx) error {
 		msgs = append(msgs, adapter.Message{Role: m.Role, Content: m.Content.Text})
 	}
 
-	if req.Stream {
-		return h.messagesStream(c, model, msgs, req.MaxTokens, len(req.Tools) > 0)
+	// Agentic mode: when tools are present, run the full server-side loop.
+	// Works for both streaming and non-streaming — agent loop runs internally,
+	// then the final answer is returned (streamed or as a single response).
+	if len(req.Tools) > 0 {
+		if req.Stream {
+			return h.messagesAgentStream(c, model, msgs, req.MaxTokens)
+		}
+		return h.messagesAgent(c, model, msgs, req.MaxTokens)
 	}
-	return h.messagesComplete(c, model, msgs, req.MaxTokens, len(req.Tools) > 0)
+	if req.Stream {
+		return h.messagesStream(c, model, msgs, req.MaxTokens, false)
+	}
+	return h.messagesComplete(c, model, msgs, req.MaxTokens, false)
 }
 
-// messagesComplete handles non-streaming Anthropic requests.
+// messagesAgent runs a full server-side agentic loop for requests with tools.
+// CAW executes bash/write_file/read_file calls internally and returns the final
+// answer once gemma:2b stops emitting tool calls.
+func (h *Handler) messagesAgent(c *fiber.Ctx, model string, msgs []adapter.Message, maxTokens int) error {
+	if !h.pool.Acquire() {
+		return c.Status(fiber.StatusTooManyRequests).JSON(anthropicError("rate_limit_error", "server busy"))
+	}
+	defer h.pool.Release()
+
+	// Web augmentation before the loop.
+	if h.augmenter != nil {
+		augmented, searched, _ := h.augmenter.Augment(c.Context(), msgs)
+		if searched {
+			msgs = augmented
+			c.Set("X-CAW-Web-Searched", "true")
+		}
+	}
+
+	// Use a per-request working directory so file operations don't pollute cwd.
+	workdir := agentWorkdir()
+	// Run the full agentic loop (up to maxAgentSteps tool executions).
+	// Context gets 5 min total for long-running agent tasks.
+	agentCtx, cancel := context.WithTimeout(c.Context(), 5*time.Minute)
+	defer cancel()
+
+	finalAnswer, steps, err := RunAgentLoop(agentCtx, h.backend, model, msgs, maxTokens, workdir)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(anthropicError("api_error", err.Error()))
+	}
+
+	// Summarize steps taken in a header for debugging.
+	if len(steps) > 0 {
+		c.Set("X-CAW-Agent-Steps", fmt.Sprintf("%d", len(steps)))
+	}
+
+	msgID := fmt.Sprintf("msg_%d", time.Now().UnixNano())
+	return c.JSON(AnthropicResponse{
+		ID:         msgID,
+		Type:       "message",
+		Role:       "assistant",
+		Content:    []AnthropicContent{{Type: "text", Text: finalAnswer}},
+		Model:      model,
+		StopReason: "end_turn",
+		Usage: AnthropicUsage{
+			InputTokens:  estimateTokens(msgs),
+			OutputTokens: len([]rune(finalAnswer)) / 4,
+		},
+	})
+}
+
+// messagesAgentStream runs the full agent loop server-side, then streams the
+// final answer using SSE so Claude Code CLI renders it progressively.
+func (h *Handler) messagesAgentStream(c *fiber.Ctx, model string, msgs []adapter.Message, maxTokens int) error {
+	if !h.pool.Acquire() {
+		return c.Status(fiber.StatusTooManyRequests).JSON(anthropicError("rate_limit_error", "server busy"))
+	}
+
+	if h.augmenter != nil {
+		augmented, searched, _ := h.augmenter.Augment(c.Context(), msgs)
+		if searched {
+			msgs = augmented
+			c.Set("X-CAW-Web-Searched", "true")
+		}
+	}
+
+	workdir := agentWorkdir()
+	// Run loop synchronously first (before SSE writer — needs real context).
+	agentCtx, agentCancel := context.WithTimeout(c.Context(), 5*time.Minute)
+	finalAnswer, steps, runErr := RunAgentLoop(agentCtx, h.backend, model, msgs, maxTokens, workdir)
+	agentCancel()
+
+	c.Set("Content-Type", "text/event-stream")
+	c.Set("Cache-Control", "no-cache")
+	c.Set("Connection", "keep-alive")
+	if len(steps) > 0 {
+		c.Set("X-CAW-Agent-Steps", fmt.Sprintf("%d", len(steps)))
+	}
+
+	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+		defer h.pool.Release()
+
+		msgID := fmt.Sprintf("msg_%d", time.Now().UnixNano())
+
+		if runErr != nil {
+			writeSSE(w, "error", fiber.Map{"type": "error", "error": fiber.Map{
+				"type": "api_error", "message": runErr.Error(),
+			}})
+			w.Flush() //nolint:errcheck
+			return
+		}
+
+		// Build a step summary prefix so the user can see what CAW did.
+		var prefix strings.Builder
+		if len(steps) > 0 {
+			prefix.WriteString(fmt.Sprintf("*(CAW executed %d step(s) server-side)*\n\n", len(steps)))
+			for _, s := range steps {
+				prefix.WriteString(fmt.Sprintf("**Step %d — %s**\n", s.Step, s.Tool))
+				if s.Output != "" {
+					lines := strings.Split(strings.TrimSpace(s.Output), "\n")
+					if len(lines) > 5 {
+						lines = append(lines[:5], "…")
+					}
+					prefix.WriteString("```\n" + strings.Join(lines, "\n") + "\n```\n")
+				}
+				if s.Error != "" {
+					prefix.WriteString(fmt.Sprintf("⚠️  %s\n", s.Error))
+				}
+			}
+			prefix.WriteString("\n---\n\n")
+		}
+
+		fullText := prefix.String() + finalAnswer
+
+		writeSSE(w, "message_start", anthropicMessageStart{
+			Type: "message_start",
+			Message: AnthropicResponse{
+				ID: msgID, Type: "message", Role: "assistant",
+				Content: []AnthropicContent{}, Model: model,
+				Usage: AnthropicUsage{InputTokens: estimateTokens(msgs), OutputTokens: 1},
+			},
+		})
+		writeSSE(w, "content_block_start", anthropicContentBlockStart{
+			Type: "content_block_start", Index: 0,
+			ContentBlock: AnthropicContent{Type: "text", Text: ""},
+		})
+		writeSSE(w, "ping", anthropicSSE{Type: "ping"})
+		w.Flush() //nolint:errcheck
+
+		// Stream the answer in ~40-char chunks for live rendering.
+		runes := []rune(fullText)
+		chunkSize := 40
+		outputTokens := 0
+		for i := 0; i < len(runes); i += chunkSize {
+			end := i + chunkSize
+			if end > len(runes) {
+				end = len(runes)
+			}
+			token := string(runes[i:end])
+			outputTokens += len(runes[i:end]) / 4
+			writeSSE(w, "content_block_delta", anthropicContentBlockDelta{
+				Type: "content_block_delta", Index: 0,
+				Delta: anthropicTextDelta{Type: "text_delta", Text: token},
+			})
+			w.Flush() //nolint:errcheck
+		}
+
+		writeSSE(w, "content_block_stop", anthropicContentBlockStop{Type: "content_block_stop", Index: 0})
+		writeSSE(w, "message_delta", anthropicMessageDelta{
+			Type:  "message_delta",
+			Delta: anthropicMessageDeltaVal{StopReason: "end_turn"},
+			Usage: AnthropicUsage{OutputTokens: outputTokens},
+		})
+		writeSSE(w, "message_stop", anthropicSSE{Type: "message_stop"})
+		w.Flush() //nolint:errcheck
+	})
+	return nil
+}
+
+
+// messagesComplete handles non-streaming Anthropic requests (no tools).
 func (h *Handler) messagesComplete(c *fiber.Ctx, model string, msgs []adapter.Message, maxTokens int, hasTools bool) error {
 	if !h.pool.Acquire() {
 		return c.Status(fiber.StatusTooManyRequests).JSON(anthropicError("rate_limit_error", "server busy"))
