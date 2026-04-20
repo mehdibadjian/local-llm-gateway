@@ -53,3 +53,6 @@ Transforms raw ideas into production-ready architectural blueprints. Enforces a 
 
 ### Evolutionary Step (`.claude/skills/evolutionary-step/SKILL.md`)
 Runs the MCP server (starts it if needed), then follows a mission to extend memory by evolving a new skill via the `/evolve` pipeline. Use when asked to "run an evolutionary step", "evolve a skill", "extend memory", or "teach Darwin to do X".
+
+### Architecture Auditor (`.claude/skills/arch-auditor/SKILL.md`)
+Performs a "Stress Test" and "Gap Analysis" on a proposed system architecture. Acts as a Principal Systems Auditor and Reliability Engineer — identifies bottlenecks, scalability risks, data integrity issues, observability gaps, and over-engineering. Outputs: Critical Risks, Efficiency Gains, a Chaos Scenario, and a Final Verdict. Use when asked to "audit an architecture", "stress test a design", "gap analysis", "review this system", "find bottlenecks", "is this over-engineered", or "will this scale".
