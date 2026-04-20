@@ -73,3 +73,17 @@
 
 ## Legend
 ✅ COMPLETED | ⛔ SKIPPED
+
+### EP-12 — Phase 3 Backlog (US-37, US-38, US-39, US-40, US-41, US-42, US-43, US-44)
+**Files:**
+- internal/security/jwt.go, tests/security/jwt_test.go (US-37)
+- internal/tools/plugin.go, internal/tools/plugin_loader.go, tests/tools/plugin_test.go (US-38)
+- scripts/benchmark/benchmark.go, scripts/benchmark/questions.go, scripts/benchmark/report.go, tests/benchmark/benchmark_test.go (US-39)
+- deploy/helm/qdrant-distributed/, scripts/migrate_qdrant.go, tests/iac/qdrant_distributed_test.go (US-40)
+- deploy/helm/pgbouncer/, tests/iac/pgbouncer_test.go (US-41)
+- internal/tools/sandbox.go (gVisor), deploy/helm/caw-wrapper/values.yaml, tests/tools/gvisor_runtime_test.go (US-42)
+- deploy/serverless/, tests/iac/serverless_test.go (US-43)
+- .github/workflows/helm-publish.yml, tests/iac/helm_publish_test.go (US-44)
+**Tests:** 12/12 packages passing (139 Phase 0-2 + ~80 Phase 3 new tests) · all test suites
+**Status:** ✅ COMPLETED
+---
