@@ -24,9 +24,43 @@ type AnthropicRequest struct {
 	Stream    bool               `json:"stream,omitempty"`
 }
 
+// AnthropicMessage is a single message in the Anthropic Messages API.
+// The `content` field can be either a plain string or an array of content
+// blocks — the Anthropic SDK sends the array form; we normalise to string.
 type AnthropicMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role    string                `json:"role"`
+	Content AnthropicMessageContent `json:"content"`
+}
+
+// AnthropicMessageContent unmarshals either a plain JSON string or an array of
+// {"type":"text","text":"..."} blocks into a single string value.
+type AnthropicMessageContent struct {
+	Text string
+}
+
+func (a *AnthropicMessageContent) UnmarshalJSON(b []byte) error {
+	// Try plain string first.
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		a.Text = s
+		return nil
+	}
+	// Try array of content blocks.
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(b, &blocks); err != nil {
+		return err
+	}
+	var parts []string
+	for _, blk := range blocks {
+		if blk.Type == "text" && blk.Text != "" {
+			parts = append(parts, blk.Text)
+		}
+	}
+	a.Text = strings.Join(parts, "\n")
+	return nil
 }
 
 // AnthropicResponse mirrors the Anthropic non-streaming response shape.
@@ -129,7 +163,7 @@ func (h *Handler) MessagesHandler(c *fiber.Ctx) error {
 		msgs = append(msgs, adapter.Message{Role: "system", Content: req.System})
 	}
 	for _, m := range req.Messages {
-		msgs = append(msgs, adapter.Message{Role: m.Role, Content: m.Content})
+		msgs = append(msgs, adapter.Message{Role: m.Role, Content: m.Content.Text})
 	}
 
 	if req.Stream {

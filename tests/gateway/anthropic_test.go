@@ -31,6 +31,7 @@ func mockBackendForMessages(content string) *adapter.MockInferenceBackend {
 func TestMessagesHandler_NonStreaming(t *testing.T) {
 	app, _ := newTestServer(t, mockBackendForMessages("Hello from CAW!"))
 
+	// content as plain string
 	body := `{"model":"claude-3-5-sonnet-20241022","max_tokens":1024,"messages":[{"role":"user","content":"hi"}]}`
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -52,6 +53,33 @@ func TestMessagesHandler_NonStreaming(t *testing.T) {
 	block := content[0].(map[string]any)
 	assert.Equal(t, "text", block["type"])
 	assert.Equal(t, "Hello from CAW!", block["text"])
+}
+
+func TestMessagesHandler_ContentAsArray(t *testing.T) {
+	var captured string
+	backend := &adapter.MockInferenceBackend{
+		GenerateFn: func(_ context.Context, req *adapter.GenerateRequest) (*adapter.GenerateResponse, error) {
+			if len(req.Messages) > 0 {
+				captured = req.Messages[len(req.Messages)-1].Content
+			}
+			return &adapter.GenerateResponse{
+				ID: "msg_test", Model: "gemma:2b",
+				Choices: []adapter.Choice{{Message: adapter.Message{Role: "assistant", Content: "ok"}}},
+			}, nil
+		},
+	}
+	app, _ := newTestServer(t, backend)
+
+	// content as array of blocks — what Claude Code CLI actually sends
+	body := `{"model":"claude-sonnet-4-5","max_tokens":512,"messages":[{"role":"user","content":[{"type":"text","text":"hello from claude code"}]}]}`
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", "test-key") // Anthropic SDK header
+
+	resp, err := app.Test(req, 5000)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, "hello from claude code", captured)
 }
 
 func TestMessagesHandler_SystemPromptIncluded(t *testing.T) {
