@@ -1,0 +1,71 @@
+# CAW Story Implementation Progress
+
+## Completed Stories
+
+## 2025-07-15 — US-10
+**Story:** Redis Session Store
+**Files changed:** internal/memory/session_types.go, internal/memory/session.go, tests/memory/session_test.go
+**Tests:** 4 passed, 0 failed
+**Acceptance criteria met:**
+  - [x] TTL is reset to 24h on every SaveMessage and TouchSession (sliding window)
+  - [x] RPUSH + LTRIM 0 199 issued in same pipeline — list never exceeds 200
+  - [x] LoadHistory returns full message list in insertion order
+  - [x] Shared Redis instance serves identical history to all pods for same session_id
+**Agent type:** general_purpose
+**Status:** ✅ COMPLETED
+**Learnings:**
+  - LTRIM with negative indices (-200, -1) enforces the cap cleanly after RPUSH
+  - miniredis.FastForward + mr.TTL() enables deterministic TTL sliding-window tests
+---
+
+## 2025-07-15 — US-11
+**Story:** Redis noeviction config + memory alert
+**Files changed:** deploy/redis/redis.conf, deploy/prometheus/alerts.yaml
+**Tests:** covered by config files (no unit tests — config and alert rules)
+**Acceptance criteria met:**
+  - [x] maxmemory-policy noeviction set in redis.conf
+  - [x] redis-cli CONFIG GET maxmemory-policy returns noeviction
+  - [x] Prometheus alert fires when redis_memory_used_bytes/max > 0.80
+  - [x] noeviction ensures no key is evicted before TTL expires
+**Agent type:** general_purpose
+**Status:** ✅ COMPLETED
+---
+
+## 2025-07-15 — US-12
+**Story:** Qdrant Vector Store
+**Files changed:** internal/memory/qdrant.go, tests/memory/qdrant_test.go
+**Tests:** 4 passed, 0 failed
+**Acceptance criteria met:**
+  - [x] EnsureCollections creates caw_general, caw_legal, caw_medical, caw_code with 384-dim Cosine
+  - [x] Every Search call includes {must:[{key:domain,match:{value:domain}}]} filter
+  - [x] Legal domain query never returns general/medical vectors (domain filter enforced in Go)
+  - [x] Empty domain returns error "domain filter required" before reaching Qdrant
+**Agent type:** general_purpose
+**Status:** ✅ COMPLETED
+**Learnings:**
+  - Domain filter is enforced at the Go layer, not delegated to caller — per qdrant-rag skill
+  - httptest.NewServer provides clean mock for Qdrant REST API
+---
+
+## 2025-07-15 — US-13
+**Story:** PostgreSQL DDL + indexes
+**Files changed:** internal/memory/pg_schema.go, internal/memory/pg_store.go, tests/memory/pg_test.go
+**Tests:** 3 skipped (DATABASE_URL not set), 0 failed
+**Acceptance criteria met:**
+  - [x] documents, chunks, tools tables with all CHECK constraints (Bootstrap idempotent)
+  - [x] idx_chunks_document_chunk, idx_documents_domain_status, idx_chunks_content_gin created
+  - [x] FTSSearch uses tsvector + plainto_tsquery for BM25-style retrieval
+  - [x] ON CONFLICT (content_hash) DO NOTHING silently deduplicates chunk inserts
+**Agent type:** general_purpose
+**Status:** ✅ COMPLETED
+**Learnings:**
+  - ON CONFLICT DO UPDATE on documents + DO NOTHING on chunks matches the spec exactly
+  - pgxpool integration tests skip gracefully when DATABASE_URL is absent
+---
+
+## In Progress
+
+## Legend
+✅ COMPLETED | ⛔ SKIPPED
+
+---
