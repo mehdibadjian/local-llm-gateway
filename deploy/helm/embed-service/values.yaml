@@ -1,0 +1,37 @@
+replicaCount: 1
+
+image:
+  repository: caw/embed-service
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  port: 8081
+  grpcPort: 50051
+
+env:
+  EMBED_CONCURRENCY: "4"
+  EMBED_HTTP_PORT: "8081"
+  EMBED_PORT: "50051"
+
+resources:
+  requests:
+    memory: 200Mi
+    cpu: 100m
+  limits:
+    memory: 512Mi
+    cpu: 500m
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8081
+  initialDelaySeconds: 30
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 8081
+  initialDelaySeconds: 30
+  periodSeconds: 5

@@ -1,0 +1,22 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: embed-service-alerts
+  labels:
+    app: embed-service
+spec:
+  groups:
+    - name: embed-service
+      rules:
+        - alert: EmbedServiceHighRestarts
+          expr: |
+            increase(kube_pod_container_status_restarts_total{container="embed-service"}[5m]) > 2
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "EmbedSvc pod restarting excessively"
+            description: >
+              The embed-service container has restarted more than 2 times in the
+              last 5 minutes. The Go client circuit breaker will activate after
+              3 consecutive failures and serve requests with x-caw-rag-degraded: true.

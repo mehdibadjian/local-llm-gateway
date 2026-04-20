@@ -1,0 +1,57 @@
+groups:
+  - name: caw-alerts
+    rules:
+      - alert: RedisLatencyHigh
+        expr: histogram_quantile(0.99, rate(caw_redis_latency_seconds_bucket[5m])) > 0.005
+        for: 1m
+        labels:
+          severity: warning
+          component: redis
+        annotations:
+          summary: "Redis p99 latency > 5ms"
+          description: "Redis p99 command latency is {{ $value | humanizeDuration }}. Investigate slow commands or network issues."
+          runbook: https://runbooks.caw.io/redis-latency
+
+      - alert: IngestDLQDepth
+        expr: caw_ingest_dlq_depth > 10
+        for: 0m
+        labels:
+          severity: critical
+          component: ingest
+        annotations:
+          summary: "Ingest DLQ depth exceeded threshold"
+          description: "The ingest dead-letter queue has {{ $value }} entries. Messages may be failing to process."
+          runbook: https://runbooks.caw.io/ingest-dlq
+
+      - alert: EmbedSvcRestarting
+        expr: increase(kube_pod_container_status_restarts_total{container="embed-service"}[5m]) > 2
+        for: 0m
+        labels:
+          severity: warning
+          component: embed-service
+        annotations:
+          summary: "EmbedSvc restarting frequently"
+          description: "The embed-service container has restarted {{ $value }} times in the last 5 minutes."
+          runbook: https://runbooks.caw.io/embed-svc-restart
+
+      - alert: RedisMemoryHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.80
+        for: 2m
+        labels:
+          severity: warning
+          component: redis
+        annotations:
+          summary: "Redis memory above 80%"
+          description: "Redis is using {{ $value | humanizePercentage }} of its maxmemory limit. Writes will fail at 100% with noeviction policy."
+          runbook: https://runbooks.caw.io/redis-memory
+
+      - alert: RAGDegradedRate
+        expr: rate(caw_rag_degraded_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: rag
+        annotations:
+          summary: "High RAG degraded rate"
+          description: "RAG is serving {{ $value | humanize }} req/s in degraded mode. Qdrant or embedding service may be unhealthy."
+          runbook: https://runbooks.caw.io/rag-degraded

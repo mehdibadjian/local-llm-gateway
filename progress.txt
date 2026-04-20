@@ -1,0 +1,89 @@
+# CAW Story Implementation Progress
+
+## Completed Stories
+
+### EP-8 — Inference Adapter Layer (US-26, US-27, US-28)
+**Files:** internal/adapter/{backend,circuit_breaker,ollama,llamacpp,vllm,factory,mock}.go
+**Tests:** 8/8 passed · tests/adapter/
+**Status:** ✅ COMPLETED
+---
+
+### EP-3 — Memory Layer (US-10, US-11, US-12, US-13)
+**Files:** internal/memory/{session,qdrant,pg_store,pg_schema,session_types}.go, deploy/redis/redis.conf, deploy/prometheus/alerts.yaml
+**Tests:** 11/11 passed · tests/memory/
+**Status:** ✅ COMPLETED
+---
+
+### EP-5 — Embedding Service (US-18, US-19, US-20)
+**Files:** internal/embed/{circuit_breaker,lru_cache,client}.go, embed_service/{server,http_server}.py, deploy/helm/embed-service/
+**Tests:** 11/11 passed · tests/embed/
+**Status:** ✅ COMPLETED
+---
+
+### EP-11 — Security (US-35, US-36)
+**Files:** internal/security/{auth,ratelimit}.go
+**Tests:** 11/11 passed · tests/security/
+**Status:** ✅ COMPLETED
+---
+
+### EP-4 — Async Ingest Pipeline (US-14, US-15, US-16, US-17)
+**Files:** internal/ingest/{types,enqueue,worker,dlq,reconciler}.go, deploy/helm/caw-reconciler/
+**Tests:** 14/14 passed · tests/ingest/
+**Status:** ✅ COMPLETED
+---
+
+### EP-1 — API Gateway (US-1, US-2, US-3, US-4, US-5)
+**Files:** internal/gateway/{server,chat,documents,sessions,probes,workerpool,types}.go, cmd/wrapper/main.go
+**Tests:** 17/17 passed · tests/gateway/
+**Status:** ✅ COMPLETED
+---
+
+### EP-6 — RAG Pipeline (US-21, US-22, US-23)
+**Files:** internal/rag/{retriever,rrf,cache,reranker,context}.go
+**Tests:** 14/14 passed · tests/rag/
+**Status:** ✅ COMPLETED
+---
+
+### EP-7 — Tool Registry (US-24, US-25)
+**Files:** internal/tools/{registry,types,dispatcher,sandbox,handler}.go
+**Tests:** 11/11 passed (1 Linux cgroup test skipped on macOS) · tests/tools/
+**Status:** ✅ COMPLETED
+---
+
+### EP-2 — Orchestration Engine (US-6, US-7, US-8, US-9)
+**Files:** internal/orchestration/{context_manager,task_planner,output_formatter,self_critique,pipeline,types}.go
+**Tests:** 22/22 passed · tests/orchestration/
+**Learnings:** SET NX TOCTOU race — must reload session after winning lock to prevent double compression
+**Status:** ✅ COMPLETED
+---
+
+### EP-9 — IaC & Auto-Scaling (US-29, US-30, US-31)
+**Files:** Dockerfile, docker-compose.yml, embed_service/Dockerfile, deploy/helm/, deploy/keda/
+**Tests:** 9/9 passed · tests/iac/
+**Status:** ✅ COMPLETED
+---
+
+### EP-10 — Observability (US-32, US-33, US-34)
+**Files:** internal/observability/{metrics,middleware,tracing}.go, deploy/prometheus/alerts.yaml, deploy/grafana/, tests/k6/load_test.js
+**Tests:** 9/9 passed · tests/observability/
+**Status:** ✅ COMPLETED
+---
+
+## In Progress
+
+## Legend
+✅ COMPLETED | ⛔ SKIPPED
+
+### EP-12 — Phase 3 Backlog (US-37, US-38, US-39, US-40, US-41, US-42, US-43, US-44)
+**Files:**
+- internal/security/jwt.go, tests/security/jwt_test.go (US-37)
+- internal/tools/plugin.go, internal/tools/plugin_loader.go, tests/tools/plugin_test.go (US-38)
+- scripts/benchmark/benchmark.go, scripts/benchmark/questions.go, scripts/benchmark/report.go, tests/benchmark/benchmark_test.go (US-39)
+- deploy/helm/qdrant-distributed/, scripts/migrate_qdrant.go, tests/iac/qdrant_distributed_test.go (US-40)
+- deploy/helm/pgbouncer/, tests/iac/pgbouncer_test.go (US-41)
+- internal/tools/sandbox.go (gVisor), deploy/helm/caw-wrapper/values.yaml, tests/tools/gvisor_runtime_test.go (US-42)
+- deploy/serverless/, tests/iac/serverless_test.go (US-43)
+- .github/workflows/helm-publish.yml, tests/iac/helm_publish_test.go (US-44)
+**Tests:** 12/12 packages passing (139 Phase 0-2 + ~80 Phase 3 new tests) · all test suites
+**Status:** ✅ COMPLETED
+---

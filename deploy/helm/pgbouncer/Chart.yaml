@@ -1,0 +1,5 @@
+apiVersion: v2
+name: pgbouncer
+description: PgBouncer connection pooler for PostgreSQL - gated on pg_stat_activity > 50
+version: 0.1.0
+appVersion: "1.0.0"

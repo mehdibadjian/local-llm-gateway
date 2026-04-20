@@ -1,0 +1,118 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CAW (Codex Artifact Wrapper) Lambda Serverless Deployment via Container Image'
+Parameters:
+  ImageUri:
+    Type: String
+    Description: ECR image URI for CAW wrapper container
+    Default: 123456789012.dkr.ecr.us-east-1.amazonaws.com/caw-wrapper:latest
+  Timeout:
+    Type: Number
+    Description: Lambda function timeout in seconds
+    Default: 300
+    MinValue: 1
+    MaxValue: 900
+  MemorySize:
+    Type: Number
+    Description: Lambda function memory allocation in MB
+    Default: 512
+    MinValue: 128
+    MaxValue: 10240
+
+Resources:
+  CAWLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: CAWLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: arn:aws:logs:*:*:*
+              - Effect: Allow
+                Action:
+                  - ec2:CreateNetworkInterface
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DeleteNetworkInterface
+                Resource: '*'
+
+  CAWLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: caw-wrapper
+      Description: Codex Artifact Wrapper serverless function
+      Role: !GetAtt CAWLambdaRole.Arn
+      Code:
+        ImageUri: !Ref ImageUri
+      PackageType: Image
+      Timeout: !Ref Timeout
+      MemorySize: !Ref MemorySize
+      EphemeralStorage:
+        Size: 512
+      Environment:
+        Variables:
+          CAW_SERVERLESS_MODE: lambda
+          PORT: '8080'
+          AWS_LAMBDA_LOG_TYPE: Tail
+      ImageConfig:
+        EntryPoint:
+          - /caw
+        Command: []
+
+  CAWLambdaUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !Ref CAWLambdaFunction
+      AuthType: NONE
+      Cors:
+        AllowOrigins:
+          - '*'
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+        AllowHeaders:
+          - '*'
+        MaxAge: 86400
+
+  CAWLambdaPermissionApiGw:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CAWLambdaFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: '*'
+      FunctionUrlAuthType: NONE
+
+Outputs:
+  LambdaFunctionArn:
+    Description: ARN of the CAW Lambda function
+    Value: !GetAtt CAWLambdaFunction.Arn
+    Export:
+      Name: CAWLambdaFunctionArn
+
+  LambdaFunctionUrl:
+    Description: HTTPS endpoint URL for the CAW Lambda function
+    Value: !GetAtt CAWLambdaUrl.FunctionUrl
+    Export:
+      Name: CAWLambdaFunctionUrl
+
+  LambdaRoleArn:
+    Description: IAM Role ARN for the CAW Lambda function
+    Value: !GetAtt CAWLambdaRole.Arn
+    Export:
+      Name: CAWLambdaRoleArn

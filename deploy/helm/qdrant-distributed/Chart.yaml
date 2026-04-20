@@ -1,0 +1,5 @@
+apiVersion: v2
+name: qdrant-distributed
+description: Qdrant distributed mode deployment for >1M chunks
+version: 0.1.0
+appVersion: "2.0.0"

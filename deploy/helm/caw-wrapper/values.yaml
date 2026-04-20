@@ -1,0 +1,34 @@
+replicaCount: 1
+
+image:
+  repository: caw/wrapper
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: true
+  className: nginx
+
+config:
+  workerPoolSize: "10"
+  redisAddr: "redis:6379"
+  ollamaBaseUrl: "http://ollama:11434"
+  qdrantBaseUrl: "http://qdrant:6333"
+
+# CodeExecutor sandbox configuration
+codeexec:
+  # Runtime for executing code: "native" (default seccomp + cgroup) or "gvisor" (runsc container runtime)
+  runtime: native
+
+resources:
+  requests:
+    memory: "128Mi"
+    cpu: "100m"
+  limits:
+    memory: "512Mi"
+    cpu: "500m"
+

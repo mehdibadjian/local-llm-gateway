@@ -1,0 +1,6 @@
+apiVersion: v2
+name: embed-service
+description: CAW EmbedSvc — sentence-transformers all-MiniLM-L6-v2 over HTTP + gRPC
+type: application
+version: 0.1.0
+appVersion: "latest"
