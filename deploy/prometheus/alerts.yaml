@@ -1,0 +1,35 @@
+groups:
+  - name: caw-alerts
+    rules:
+      - alert: RedisMemoryHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.80
+        for: 2m
+        labels:
+          severity: warning
+          component: redis
+        annotations:
+          summary: "Redis memory usage above 80%"
+          description: "Redis is using {{ $value | humanizePercentage }} of its maxmemory limit. With noeviction policy, writes will start failing above 100%."
+          runbook: https://runbooks.caw.io/redis-memory
+
+      - alert: EmbedSvcRestarting
+        expr: increase(kube_pod_container_status_restarts_total{container="embed-service"}[5m]) > 2
+        for: 0m
+        labels:
+          severity: critical
+          component: embed-service
+        annotations:
+          summary: "EmbedSvc pod restarting frequently"
+          description: "The embed-service container has restarted {{ $value }} times in the last 5 minutes."
+          runbook: https://runbooks.caw.io/embed-svc-restart
+
+      - alert: IngestDLQDepth
+        expr: caw_ingest_dlq_depth > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: ingest
+        annotations:
+          summary: "Ingest DLQ depth exceeds threshold"
+          description: "The ingest dead-letter queue has {{ $value }} entries. Messages may be failing to process."
+          runbook: https://runbooks.caw.io/ingest-dlq
