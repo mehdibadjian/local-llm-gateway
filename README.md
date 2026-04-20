@@ -2,9 +2,51 @@
 
 > Transform a small local model into a production-grade AI system — **100% offline, 100% local**.
 
-CAW is a stateless Go service that wraps a small language model (e.g., `gemma:2b`) with multi-step reasoning, long-context handling, structured output, RAG-backed retrieval, tool calling, and JWT multi-tenant auth — without modifying the underlying model.
+## Purpose
+
+Small open-source models like `gemma:2b` are fast and cheap to run, but they lack the reasoning depth, tool-use, and long-context handling needed for real agentic tasks. Frontier APIs (OpenAI, Anthropic) close that gap — but they require internet access, send your data to third-party servers, and cost money per token.
+
+**CAW bridges that gap without giving up control.**
+
+It is a stateless Go service that sits in front of any local model and adds:
+
+| Problem | CAW solution |
+|---|---|
+| Model can't reliably call tools | **Virtual tool calling** — parses bash/code blocks and returns proper `tool_use` JSON |
+| Multi-step tasks fail mid-way | **Server-side agentic loop** — CAW executes every step, feeds output back, loops until done |
+| No memory across requests | **Redis session store** + sliding context window |
+| Can't search or retrieve docs | **RAG pipeline** — Qdrant ANN + PostgreSQL FTS, RRF merge |
+| Answers go stale | **Web augmentation** — DDG Instant Answer injected as context for live queries |
+| Only one model supported | **Pluggable inference adapters** — Ollama, llama.cpp, vLLM |
+| Hard to scale | **KEDA autoscaling** — scale-to-zero on Kubernetes |
+
+CAW is designed to be used as a drop-in `ANTHROPIC_BASE_URL` for Claude Code CLI — your local 2B-parameter model gets a production-grade execution environment without touching the model weights.
 
 **North Star metric:** Close ≥ 60% of the capability gap between `gemma:2b` and GPT-3.5 on MMLU and HumanEval benchmarks, running fully offline on a $24 Droplet (4 GB RAM).
+
+---
+
+## How the Agentic Loop Works
+
+When a request arrives with a `tools` array (e.g. from Claude Code CLI):
+
+```
+Claude Code CLI ──► CAW (Go) ──► gemma:2b
+                     │  ▲
+                     │  │  "write bash block, say DONE when done"
+                     ▼  │
+                   bash execution
+                   (server-side)
+                     │
+                     └─► output fed back ──► next step ──► DONE
+```
+
+1. CAW rewrites the system prompt to instruct the model to emit ```` ```bash ```` blocks  
+2. The model responds with a bash command (or Python script)  
+3. CAW executes it inside the container (Alpine + python3)  
+4. Output is fed back as context for the next turn  
+5. Loop continues until the model signals `DONE:` or produces a plain-text final answer  
+6. Claude Code CLI receives the finished result as a normal response — no tool round-trips needed
 
 ---
 
@@ -55,7 +97,7 @@ CAW is a stateless Go service that wraps a small language model (e.g., `gemma:2b
 | **RAG Pipeline** | Parallel Qdrant ANN + PG FTS, RRF merge, cross-encoder reranker (agent mode) |
 | **Tool Registry** | Tool dispatcher, CodeExecutor sandbox (seccomp + cgroup v2, optional gVisor), community plugins |
 | **Inference Adapter** | Pluggable `InferenceBackend` interface — OllamaAdapter, LlamaCppAdapter, vLLMAdapter |
-| **IaC / Scaling** | Docker scratch image (<15 MB), Helm charts, KEDA ScaledObjects, serverless manifests |
+| **IaC / Scaling** | Docker Alpine image (~30 MB), Helm charts, KEDA ScaledObjects, serverless manifests |
 | **Observability** | OTel traces, 6 canonical `caw_*` Prometheus metrics, Grafana dashboards, k6 load tests |
 
 ---
@@ -94,7 +136,19 @@ curl http://localhost:8080/v1/chat/completions \
   }'
 ```
 
-### 4 — Stream a response
+### 4 — Use with Claude Code CLI
+
+Point Claude Code at CAW as its backend — your local model gets full agentic capability:
+
+```bash
+export ANTHROPIC_BASE_URL=http://localhost:8080
+export ANTHROPIC_API_KEY=dev-key
+claude   # or: claude "write a prime factorization function and test it"
+```
+
+CAW intercepts every tool call, executes it server-side, and returns finished results.
+
+### 5 — Stream a response
 
 ```bash
 curl -N http://localhost:8080/v1/chat/completions \
@@ -365,8 +419,12 @@ python http_server.py     # HTTP on :5000
 
 ## Contributing
 
+See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full guide — setup, TDD workflow, commit format, plugin development, and code style.
+
+Quick checklist:
+
 1. Fork and create a feature branch: `git checkout -b feat/my-feature`
-2. Follow TDD — write failing tests first, then implement
+2. Write failing tests first, then implement (TDD)
 3. Ensure `go test ./tests/... -count=1` passes with 0 failures
 4. Commit with the canonical format: `feat(US-XX): <title>`
 5. Open a pull request against `main`
