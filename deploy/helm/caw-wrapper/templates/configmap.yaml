@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: caw-wrapper-config
+  labels:
+    app: caw-wrapper
+data:
+  WORKER_POOL_SIZE: {{ .Values.config.workerPoolSize | quote }}
+  REDIS_ADDR: {{ .Values.config.redisAddr | quote }}
+  OLLAMA_BASE_URL: {{ .Values.config.ollamaBaseUrl | quote }}
+  QDRANT_BASE_URL: {{ .Values.config.qdrantBaseUrl | quote }}

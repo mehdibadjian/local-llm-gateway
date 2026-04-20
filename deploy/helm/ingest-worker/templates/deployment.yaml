@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: caw-ingest-worker
+  labels:
+    app: caw-ingest-worker
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: caw-ingest-worker
+  template:
+    metadata:
+      labels:
+        app: caw-ingest-worker
+    spec:
+      containers:
+      - name: ingest-worker
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        args: ["--mode=ingest"]
+        env:
+        - name: REDIS_ADDR
+          value: {{ .Values.env.REDIS_ADDR | quote }}
+        - name: QDRANT_BASE_URL
+          value: {{ .Values.env.QDRANT_BASE_URL | quote }}
+        - name: DATABASE_URL
+          value: {{ .Values.env.DATABASE_URL | quote }}
+        - name: EMBED_BASE_URL
+          value: {{ .Values.env.EMBED_BASE_URL | quote }}
+        resources:
+          requests:
+            memory: {{ .Values.resources.requests.memory }}
+            cpu: {{ .Values.resources.requests.cpu }}
+          limits:
+            memory: {{ .Values.resources.limits.memory }}
+            cpu: {{ .Values.resources.limits.cpu }}

@@ -1,0 +1,16 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: inference-backend
+spec:
+  scaleTargetRef:
+    name: inference-backend
+  minReplicaCount: 1
+  maxReplicaCount: 4
+  triggers:
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus:9090
+      metricName: caw_requests_in_flight
+      query: sum(caw_requests_in_flight)
+      threshold: "3"

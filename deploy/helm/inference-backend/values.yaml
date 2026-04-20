@@ -1,0 +1,23 @@
+replicaCount: 1
+
+image:
+  repository: ollama/ollama
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 11434
+
+# minReplicaCount=1 enforced by KEDA ScaledObject (keep-warm, never scale to zero)
+keda:
+  minReplicaCount: 1
+  maxReplicaCount: 4
+
+resources:
+  requests:
+    memory: "2Gi"
+    cpu: "500m"
+  limits:
+    memory: "4Gi"
+    cpu: "2000m"
