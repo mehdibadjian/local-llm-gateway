@@ -15,7 +15,7 @@ from sentence_transformers import SentenceTransformer
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-PORT = int(os.getenv("EMBED_HTTP_PORT", "8081"))
+PORT = int(os.getenv("PORT", os.getenv("EMBED_HTTP_PORT", "5001")))
 
 logger.info("Loading sentence-transformers model …")
 _model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")

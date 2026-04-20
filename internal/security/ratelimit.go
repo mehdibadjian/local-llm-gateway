@@ -53,7 +53,7 @@ func (rl *RateLimiter) Middleware() fiber.Handler {
 		windowTs := time.Now().Unix() / WindowSeconds
 		key := fmt.Sprintf("caw:rate:%s:%d", apiKey, windowTs)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		defer cancel()
 
 		result, err := rateLimitScript.Run(ctx, rl.rdb, []string{key}, RateLimitPerMin, WindowSeconds).Int()
