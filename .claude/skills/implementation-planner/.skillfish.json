@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "implementation-planner",
+  "owner": "jumppad-labs",
+  "repo": "jumppad",
+  "path": ".claude/skills/implementation-planner",
+  "branch": "main",
+  "sha": "15e432a7b39250e30234adb08ac9608be1ba3192",
+  "source": "manual"
+}
