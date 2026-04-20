@@ -59,14 +59,27 @@ func (cm *ContextManager) LoadAndManage(ctx context.Context, sessionID string) (
 	}
 
 	if acquired {
-		// Winner: compress and write back.
+		// Reload after winning the lock: another goroutine may have compressed
+		// and DEL'd before we called SetNX (TOCTOU guard).
+		reloaded, reloadErr := cm.session.LoadHistory(ctx, sessionID)
+		if reloadErr == nil {
+			reloadedMsgs := memoryToAdapter(reloaded)
+			if countTokens(reloadedMsgs) < CompressionThreshold {
+				cm.rdb.Del(ctx, lockKey) //nolint:errcheck
+				return reloadedMsgs, nil
+			}
+			messages = reloadedMsgs
+		}
+
+		// Compress, write back, then release lock (held until write-back).
 		compressed, compErr := cm.CompressHistory(ctx, messages)
-		// Always release the lock regardless of compression outcome.
-		cm.rdb.Del(ctx, lockKey) //nolint:errcheck
 		if compErr != nil {
+			cm.rdb.Del(ctx, lockKey) //nolint:errcheck
 			return HardTruncate(messages, CompressionTarget), nil
 		}
-		if err := cm.writeBackHistory(ctx, sessionID, compressed); err != nil {
+		writeErr := cm.writeBackHistory(ctx, sessionID, compressed)
+		cm.rdb.Del(ctx, lockKey) //nolint:errcheck — release after write-back
+		if writeErr != nil {
 			return compressed, nil
 		}
 		return compressed, nil
