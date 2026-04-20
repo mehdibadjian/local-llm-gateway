@@ -1,6 +1,12 @@
-# CAW — Capability Amplification Wrapper
+# local-llm-gateway — Capability Amplification Wrapper (CAW)
 
-> Transform a small local model into a production-grade AI system — **100% offline, 100% local**.
+[![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go&logoColor=white)](https://golang.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Docker](https://img.shields.io/badge/Docker-alpine-2496ED?logo=docker&logoColor=white)](Dockerfile)
+[![Offline](https://img.shields.io/badge/runs-100%25%20offline-brightgreen)]()
+[![OpenAI Compatible](https://img.shields.io/badge/API-OpenAI%20%2B%20Anthropic%20compatible-blueviolet)]()
+
+> **Self-hosted AI agent gateway** — run `gemma:2b` (or any local LLM) with tool calling, RAG, web search, and a full agentic loop. No API keys, no cloud, no data leaks.
 
 ## Purpose
 
@@ -434,3 +440,26 @@ Quick checklist:
 ## License
 
 MIT — see [LICENSE](LICENSE) for details.
+
+---
+
+## How it compares
+
+| Feature | local-llm-gateway (CAW) | LiteLLM | Ollama | LocalAI |
+|---|---|---|---|---|
+| OpenAI-compatible API | ✅ | ✅ | ✅ | ✅ |
+| Anthropic-compatible API | ✅ | ✅ | ❌ | ❌ |
+| **Server-side agentic loop** | ✅ | ❌ | ❌ | ❌ |
+| **Tool calling for any model** | ✅ | partial | ❌ | ❌ |
+| RAG (vector + FTS) | ✅ | ❌ | ❌ | partial |
+| Web augmentation (DDG) | ✅ | ❌ | ❌ | ❌ |
+| Redis session memory | ✅ | ❌ | ❌ | ❌ |
+| KEDA autoscaling | ✅ | ❌ | ❌ | ❌ |
+| 100% offline | ✅ | ✅ | ✅ | ✅ |
+
+---
+
+<!-- SEO topics — mirrors GitHub repo topics -->
+**Keywords:** local-llm · self-hosted-ai · llm-gateway · llm-agent · offline-ai · openai-compatible · anthropic-compatible · gemma · ollama · rag · tool-calling · agentic-loop · go · fiber · redis · qdrant · postgresql · keda · helm · docker
+
+
