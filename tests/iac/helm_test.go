@@ -110,3 +110,83 @@ func TestKEDAInferenceMinReplica(t *testing.T) {
 
 	assert.Equal(t, 1, so.Spec.MinReplicaCount, "inference-backend ScaledObject minReplicaCount must be 1")
 }
+
+// Qdrant Distributed Mode Tests
+// US-40: Qdrant distributed mode migration path for >1M chunks
+
+func TestQdrantDistributedChartExists(t *testing.T) {
+	path := filepath.Join(helmDir(), "qdrant-distributed", "Chart.yaml")
+	_, err := os.Stat(path)
+	require.NoError(t, err, "qdrant-distributed Chart.yaml must exist")
+}
+
+func TestQdrantDistributedValues_ReplicationFactor(t *testing.T) {
+	path := filepath.Join(helmDir(), "qdrant-distributed", "values.yaml")
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	var values struct {
+		DistributedMode struct {
+			Enabled             bool `yaml:"enabled"`
+			ReplicationFactor   int  `yaml:"replicationFactor"`
+			ConsensusThreadsCount int `yaml:"consensusThreadsCount"`
+		} `yaml:"distributedMode"`
+	}
+	require.NoError(t, yaml.Unmarshal(data, &values))
+
+	assert.True(t, values.DistributedMode.Enabled, "distributedMode.enabled must be true")
+	assert.Equal(t, 2, values.DistributedMode.ReplicationFactor, "distributedMode.replicationFactor must be 2")
+	assert.Equal(t, 4, values.DistributedMode.ConsensusThreadsCount, "distributedMode.consensusThreadsCount must be 4")
+}
+
+func TestQdrantDistributedValues_Persistence(t *testing.T) {
+	path := filepath.Join(helmDir(), "qdrant-distributed", "values.yaml")
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	var values struct {
+		Persistence struct {
+			Enabled bool   `yaml:"enabled"`
+			Size    string `yaml:"size"`
+		} `yaml:"persistence"`
+	}
+	require.NoError(t, yaml.Unmarshal(data, &values))
+
+	assert.True(t, values.Persistence.Enabled, "persistence.enabled must be true")
+	assert.NotEmpty(t, values.Persistence.Size, "persistence.size must be set")
+}
+
+func TestQdrantDistributedValues_ResourceLimits(t *testing.T) {
+	path := filepath.Join(helmDir(), "qdrant-distributed", "values.yaml")
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	var values struct {
+		Resources struct {
+			Requests struct {
+				Memory string `yaml:"memory"`
+				CPU    string `yaml:"cpu"`
+			} `yaml:"requests"`
+			Limits struct {
+				Memory string `yaml:"memory"`
+				CPU    string `yaml:"cpu"`
+			} `yaml:"limits"`
+		} `yaml:"resources"`
+	}
+	require.NoError(t, yaml.Unmarshal(data, &values))
+
+	assert.Equal(t, "1Gi", values.Resources.Requests.Memory, "resources.requests.memory must be 1Gi")
+	assert.Equal(t, "2Gi", values.Resources.Limits.Memory, "resources.limits.memory must be 2Gi")
+}
+
+func TestQdrantDistributedStatefulSet_Exists(t *testing.T) {
+	path := filepath.Join(helmDir(), "qdrant-distributed", "templates", "statefulset.yaml")
+	_, err := os.Stat(path)
+	require.NoError(t, err, "qdrant-distributed StatefulSet template must exist")
+}
+
+func TestQdrantDistributedService_Exists(t *testing.T) {
+	path := filepath.Join(helmDir(), "qdrant-distributed", "templates", "service.yaml")
+	_, err := os.Stat(path)
+	require.NoError(t, err, "qdrant-distributed Service template must exist")
+}

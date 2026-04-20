@@ -1,0 +1,67 @@
+# Qdrant Distributed Mode Values
+# For deployments handling >1M chunks
+
+replicaCount: 3
+
+image:
+  repository: qdrant/qdrant
+  tag: "v2.0.0"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 6333
+  raftPort: 6334
+
+# Distributed mode configuration
+# WARNING: This chart enables distributed storage mode. Once enabled,
+# a migration script must be run to convert single-node collections.
+# See scripts/migrate_qdrant.go for details.
+distributedMode:
+  enabled: true
+  replicationFactor: 2
+  consensusThreadsCount: 4
+
+# Persistence configuration
+persistence:
+  enabled: true
+  size: 50Gi
+  storageClassName: standard
+
+# Resource limits for distributed deployment
+resources:
+  requests:
+    memory: "1Gi"
+    cpu: "500m"
+  limits:
+    memory: "2Gi"
+    cpu: "1000m"
+
+# Node affinity for distributed deployment
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - qdrant-distributed
+          topologyKey: kubernetes.io/hostname
+
+# Health check configuration
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 15
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 2

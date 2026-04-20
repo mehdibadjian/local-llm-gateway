@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: qdrant-distributed
+  labels:
+    app: qdrant-distributed
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+spec:
+  serviceName: qdrant-distributed
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: qdrant-distributed
+  template:
+    metadata:
+      labels:
+        app: qdrant-distributed
+      annotations:
+        # Threshold guidance: distributed mode recommended for >1M chunks
+        caw.threshold: ">1M chunks"
+        caw.migration-required: "true"
+    spec:
+      affinity:
+        {{- toYaml .Values.affinity | nindent 8 }}
+      containers:
+      - name: qdrant
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.service.port }}
+          protocol: TCP
+        - name: raft
+          containerPort: {{ .Values.service.raftPort }}
+          protocol: TCP
+        env:
+        - name: QDRANT_DISTRIBUTED_MODE
+          value: "true"
+        - name: QDRANT_REPLICATION_FACTOR
+          value: "{{ .Values.distributedMode.replicationFactor }}"
+        - name: QDRANT_CONSENSUS_THREADS_COUNT
+          value: "{{ .Values.distributedMode.consensusThreadsCount }}"
+        - name: QDRANT_SNAPSHOT_RECOVERY
+          value: "true"
+        {{- if .Values.livenessProbe.enabled }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.service.port }}
+          initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+          failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+        {{- end }}
+        {{- if .Values.readinessProbe.enabled }}
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: {{ .Values.service.port }}
+          initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+          failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+        {{- end }}
+        resources:
+          requests:
+            memory: {{ .Values.resources.requests.memory }}
+            cpu: {{ .Values.resources.requests.cpu }}
+          limits:
+            memory: {{ .Values.resources.limits.memory }}
+            cpu: {{ .Values.resources.limits.cpu }}
+        volumeMounts:
+        - name: data
+          mountPath: /qdrant/storage
+      terminationGracePeriodSeconds: 30
+  {{- if .Values.persistence.enabled }}
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: {{ .Values.persistence.storageClassName }}
+      resources:
+        requests:
+          storage: {{ .Values.persistence.size }}
+  {{- end }}
