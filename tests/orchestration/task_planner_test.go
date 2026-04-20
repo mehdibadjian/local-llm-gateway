@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/caw/wrapper/internal/adapter"
-	"github.com/caw/wrapper/internal/gateway"
 	"github.com/caw/wrapper/internal/orchestration"
 	"github.com/stretchr/testify/assert"
 )
@@ -21,7 +20,7 @@ func TestClassifyIntent_SimplePlainChat(t *testing.T) {
 func TestClassifyIntent_JSONResponseFormat(t *testing.T) {
 	req := orchestration.OrchestrationRequest{
 		Messages:       []adapter.Message{adapter_message("give me json")},
-		ResponseFormat: &gateway.ResponseFormat{Type: "json_object"},
+		ResponseFormat: &orchestration.ResponseFormat{Type: "json_object"},
 	}
 	intent, fallback := orchestration.ClassifyIntent(req)
 	assert.Equal(t, orchestration.IntentStructuredOutput, intent)

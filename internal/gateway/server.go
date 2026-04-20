@@ -6,6 +6,7 @@ import (
 
 	"github.com/caw/wrapper/internal/adapter"
 	"github.com/caw/wrapper/internal/memory"
+	"github.com/caw/wrapper/internal/orchestration"
 	"github.com/caw/wrapper/internal/security"
 	"github.com/caw/wrapper/internal/tools"
 	"github.com/gofiber/fiber/v2"
@@ -20,14 +21,16 @@ type Server struct {
 	backend adapter.InferenceBackend
 	session *memory.SessionStore
 	rdb     *redis.Client
+	handler *Handler // stored so RegisterWebAugmenter can mutate it post-construction
 }
 
 // Handler holds the dependencies shared by all route handlers.
 type Handler struct {
-	pool    *WorkerPool
-	backend adapter.InferenceBackend
-	session *memory.SessionStore
-	rdb     *redis.Client
+	pool     *WorkerPool
+	backend  adapter.InferenceBackend
+	session  *memory.SessionStore
+	rdb      *redis.Client
+	augmenter *orchestration.WebAugmenter // nil = no web augmentation
 }
 
 // NewServer wires the Fiber application, middleware chain, and all route handlers.
@@ -52,7 +55,6 @@ func NewServer(backend adapter.InferenceBackend, rdb *redis.Client, session *mem
 	app.Get("/readyz", ReadyzHandler(backend))
 
 	h := &Handler{pool: pool, backend: backend, session: session, rdb: rdb}
-
 	// All /v1 routes require auth + rate limiting.
 	api := app.Group("/v1", security.NewAuthMiddleware(), rateLimiter.Middleware())
 	api.Post("/chat/completions", h.ChatHandler)
@@ -70,7 +72,14 @@ func NewServer(backend adapter.InferenceBackend, rdb *redis.Client, session *mem
 		backend: backend,
 		session: session,
 		rdb:     rdb,
+		handler: h,
 	}
+}
+
+// RegisterWebAugmenter attaches a WebAugmenter so the handler automatically
+// enriches queries with live web results before sending them to the model.
+func (s *Server) RegisterWebAugmenter(wa *orchestration.WebAugmenter) {
+	s.handler.augmenter = wa
 }
 
 // RegisterToolRoutes mounts GET /v1/tools and POST /v1/tools using the provided handler.

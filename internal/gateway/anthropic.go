@@ -179,6 +179,15 @@ func (h *Handler) messagesComplete(c *fiber.Ctx, model string, msgs []adapter.Me
 	}
 	defer h.pool.Release()
 
+	// Web augmentation: inject live search results when the query contains signals.
+	if h.augmenter != nil {
+		augmented, searched, _ := h.augmenter.Augment(c.Context(), msgs)
+		if searched {
+			msgs = augmented
+			c.Set("X-CAW-Web-Searched", "true")
+		}
+	}
+
 	genReq := &adapter.GenerateRequest{
 		Model:     model,
 		Messages:  msgs,
@@ -220,6 +229,16 @@ func (h *Handler) messagesStream(c *fiber.Ctx, model string, msgs []adapter.Mess
 		return c.Status(fiber.StatusTooManyRequests).JSON(anthropicError("rate_limit_error", "server busy"))
 	}
 
+	// Web augmentation runs before the stream writer (needs a real context).
+	webSearched := false
+	if h.augmenter != nil {
+		augmented, searched, _ := h.augmenter.Augment(c.Context(), msgs)
+		if searched {
+			msgs = augmented
+			webSearched = true
+		}
+	}
+
 	genReq := &adapter.GenerateRequest{
 		Model:     model,
 		Messages:  msgs,
@@ -230,6 +249,9 @@ func (h *Handler) messagesStream(c *fiber.Ctx, model string, msgs []adapter.Mess
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
+	if webSearched {
+		c.Set("X-CAW-Web-Searched", "true")
+	}
 
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
 		defer h.pool.Release()

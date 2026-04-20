@@ -2,7 +2,6 @@ package orchestration
 
 import (
 	"github.com/caw/wrapper/internal/adapter"
-	"github.com/caw/wrapper/internal/gateway"
 )
 
 // Intent classifies what the orchestration pipeline should do.
@@ -17,13 +16,19 @@ const (
 	IntentCodeGeneration    Intent = "code-generation"   // code + execution feedback
 )
 
+// ResponseFormat mirrors the OpenAI/Anthropic response_format field.
+// Defined here to avoid a circular import with the gateway package.
+type ResponseFormat struct {
+	Type string `json:"type"` // "json_object" or "text"
+}
+
 // OrchestrationRequest carries all inputs the pipeline needs.
 type OrchestrationRequest struct {
 	SessionID      string
 	Messages       []adapter.Message
 	Model          string
 	Stream         bool
-	ResponseFormat *gateway.ResponseFormat
+	ResponseFormat *ResponseFormat
 	AgentMode      bool
 	RAGEnabled     bool
 	Domain         string
@@ -46,6 +51,7 @@ type OrchestrationResult struct {
 	CoTApplied      bool   // whether chain-of-thought decomposition was used
 	CodeFeedback    bool   // whether code-execution feedback loop ran
 	CritiqueScore   int    // final critique score (0 if not critiqued)
+	WebSearched     bool   // whether web augmentation was applied
 }
 
 // CompressionResult holds the outcome of a context-management pass.

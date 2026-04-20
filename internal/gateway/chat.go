@@ -38,9 +38,18 @@ func (h *Handler) chatComplete(c *fiber.Ctx, req *ChatCompletionRequest) error {
 	}
 	defer h.pool.Release()
 
+	msgs := req.Messages
+	if h.augmenter != nil {
+		augmented, searched, _ := h.augmenter.Augment(c.Context(), msgs)
+		if searched {
+			msgs = augmented
+			c.Set("X-CAW-Web-Searched", "true")
+		}
+	}
+
 	genReq := &adapter.GenerateRequest{
 		Model:       req.Model,
-		Messages:    req.Messages,
+		Messages:    msgs,
 		Stream:      false,
 		Temperature: req.Temperature,
 		MaxTokens:   req.MaxTokens,
@@ -61,9 +70,18 @@ func (h *Handler) chatStream(c *fiber.Ctx, req *ChatCompletionRequest) error {
 		return c.Status(fiber.StatusTooManyRequests).JSON(errResp("server busy"))
 	}
 
+	msgs := req.Messages
+	if h.augmenter != nil {
+		augmented, searched, _ := h.augmenter.Augment(c.Context(), msgs)
+		if searched {
+			msgs = augmented
+			c.Set("X-CAW-Web-Searched", "true")
+		}
+	}
+
 	genReq := &adapter.GenerateRequest{
 		Model:       req.Model,
-		Messages:    req.Messages,
+		Messages:    msgs,
 		Stream:      true,
 		Temperature: req.Temperature,
 		MaxTokens:   req.MaxTokens,

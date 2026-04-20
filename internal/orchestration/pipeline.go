@@ -8,14 +8,15 @@ import (
 )
 
 // Pipeline wires together ContextManager, TaskPlanner, CoT decomposer,
-// OutputFormatter, code-feedback loop, and SelfCritiquer into a single
-// orchestration pass that amplifies gemma:2b without changing its weights.
+// OutputFormatter, code-feedback loop, SelfCritiquer, and WebAugmenter
+// into a single orchestration pass that amplifies gemma:2b without changing its weights.
 type Pipeline struct {
 	contextMgr   *ContextManager
 	formatter    *OutputFormatter
 	critiquer    *SelfCritiquer
 	cot          *ChainOfThoughtDecomposer
 	codeFeedback *CodeFeedbackLoop
+	webAugmenter *WebAugmenter // nil = no web augmentation
 }
 
 // NewPipeline constructs a Pipeline from its component parts.
@@ -27,6 +28,13 @@ func NewPipeline(cm *ContextManager, formatter *OutputFormatter, critiquer *Self
 		cot:          NewChainOfThoughtDecomposer(formatter.Backend()),
 		codeFeedback: NewCodeFeedbackLoop(formatter.Backend()),
 	}
+}
+
+// WithWebAugmenter attaches a WebAugmenter so the pipeline can enrich queries
+// with live web results before passing them to the model.
+func (p *Pipeline) WithWebAugmenter(wa *WebAugmenter) *Pipeline {
+	p.webAugmenter = wa
+	return p
 }
 
 // Run executes the full amplified orchestration pipeline:
@@ -44,6 +52,16 @@ func (p *Pipeline) Run(ctx context.Context, req OrchestrationRequest) (*Orchestr
 	}
 	allMessages := append(messages, req.Messages...)
 
+	// 1b. Web augmentation — inject live search results when signals detected.
+	webSearched := false
+	if p.webAugmenter != nil {
+		augmented, searched, augErr := p.webAugmenter.Augment(ctx, allMessages)
+		if augErr == nil && searched {
+			allMessages = augmented
+			webSearched = true
+		}
+	}
+
 	// 2. Classify intent.
 	intent, isFallback := ClassifyIntent(req)
 
@@ -51,6 +69,7 @@ func (p *Pipeline) Run(ctx context.Context, req OrchestrationRequest) (*Orchestr
 		Intent:         intent,
 		IntentFallback: isFallback,
 		RAGDegraded:    req.RAGDegraded,
+		WebSearched:    webSearched,
 	}
 
 	genReq := &adapter.GenerateRequest{
