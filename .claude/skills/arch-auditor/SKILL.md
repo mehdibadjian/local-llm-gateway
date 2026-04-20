@@ -55,31 +55,27 @@ Produce your audit in exactly this structure:
 
 ---
 
-## Project Context (Darwin-MCP)
+## Project Context
 
-When auditing Darwin-MCP components, apply awareness of the following architecture:
-
-### Project Identity
-This is **mcp-evolution-core** — the Brain of the Darwin-MCP system. It is a stateless MCP SSE server deployed on a $5 Droplet that enables a Host LLM to evolve, register, and invoke AI skills (species) at runtime.
+When auditing this project's components, apply awareness of the following architecture:
 
 ### Architecture at a Glance
-- **Brain** (`brain/`): Stateless MCP SSE server — the public repo, lives on the Droplet
-- **Memory** (`memory/`): Git submodule (`mcp-evolution-vault`) — private, stateful, stores species and registry
-- **Registry** (`memory/dna/registry.json`): Single source of truth for all registered skills
-- **Species** (`memory/species/`): Python files representing individual AI tools
+- **Brain** (`brain/`): Core server and business logic
+- **Memory** (`memory/`): Private, stateful storage for state and configuration
+- **Registry** (`memory/dna/registry.json`): Single source of truth for registered capabilities
+- **Species** (`memory/species/`): Individual component implementations
 
 ### Key Components
 
 | File | Role |
 |------|------|
-| `brain/bridge/sse_server.py` | SSE transport layer with Bearer Token auth |
-| `brain/engine/mutator.py` | `request_evolution` pipeline — sandbox → test → promote |
-| `brain/engine/sandbox.py` | Temporary virtualenv isolation for mutations |
-| `brain/engine/guard.py` | Circuit breaker (recursion depth, CPU/RAM, Toxic flag) |
-| `brain/utils/git_manager.py` | Git state machine scoped to `/memory` |
+| `brain/bridge/sse_server.py` | Transport layer with Bearer Token auth |
+| `brain/engine/mutator.py` | Evolution pipeline — sandbox → test → promote |
+| `brain/engine/sandbox.py` | Temporary isolation for mutations |
+| `brain/engine/guard.py` | Circuit breaker (safety guards) |
+| `brain/utils/git_manager.py` | Git state machine |
 | `brain/utils/registry.py` | Registry read/write operations |
-| `brain/watcher/hot_reload.py` | Watchdog file watcher, emits `list_changed` |
-| `darwin.service` | Systemd service for Droplet deployment |
+| `brain/watcher/hot_reload.py` | Watchdog file watcher |
 
 ### Conventions
 - All tests live in `tests/` and use `pytest`
@@ -89,12 +85,12 @@ This is **mcp-evolution-core** — the Brain of the Darwin-MCP system. It is a s
 - Sprint velocity: ~25–28 story points per 2-week sprint
 
 ### Agent Roles
-- **Story Implementer** — TDD implementation of backlog stories, commits `feat(US-N): <title>`
-- **GitHub Asset Hunter** — Discovers and synthesizes AI skills from public GitHub repos
+- **Story Implementer** — TDD implementation of backlog stories
+- **GitHub Asset Hunter** — Discovers and synthesizes capabilities from public repos
 - **Manifesto-to-Epics** — Converts specs into structured Agile backlogs
 - **Wiki Architect** — Produces hierarchical wiki catalogues from the codebase
-- **Senior Architect** — Discovery-first blueprinting: HLA, schema, API, IaC, roadmap
-- **Evolutionary Step** — Runs the `/evolve` pipeline to teach Darwin a new capability
+- **Senior Architect** — Discovery-first blueprinting
+- **Evolutionary Step** — Evolution pipeline for extending system capabilities
 
 ---
 

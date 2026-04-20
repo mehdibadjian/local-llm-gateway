@@ -168,7 +168,7 @@ For the overall project, output 4–6 Definition of Done items:
 
 ```json
 {
-  "project": "Darwin-MCP",
+  "project": "Project Backlog",
   "generated_at": "ISO-8601 timestamp",
   "epics": [ ...EP objects... ],
   "features": [ ...F objects... ],
@@ -195,19 +195,18 @@ For the overall project, output 4–6 Definition of Done items:
 
 ---
 
-## Application to Darwin-MCP Manifesto
+## Application to Your Manifesto
 
-When applied to [docs/reference/technical-manifesto.md](../../docs/reference/technical-manifesto.md), produce epics for these system boundaries identified in the manifest:
+When applied to your technical manifesto (e.g., `docs/reference/technical-manifesto.md`), the skill will automatically identify system boundaries and produce epics corresponding to the major components and integration points described in your spec.
 
-| Epic | Source Section |
-|------|---------------|
-| EP-1: SSE Bridge — Remote MCP Transport | §2A — `brain/bridge/sse_server.py` |
-| EP-2: Mutation Engine — Viral Synthesis | §2B — `brain/engine/mutator.py` |
-| EP-3: Git Manager — Reproductive System | §2C — `brain/utils/git_manager.py` |
-| EP-4: Genome Registry — Single Source of Truth | §3 — `memory/dna/registry.json` |
-| EP-5: Biosafety — Circuit Breaker & Guardrails | §4 — BSL-1, BSL-2, BSL-3 |
-| EP-6: Hot Reload & Tool Discovery | §5 — watchdog / `list_changed` |
-| EP-7: Deployment — Systemd Service | §6 — `darwin.service` |
+**Example structure** (adapt to your actual components):
+- **EP-1**: Core Transport Layer
+- **EP-2**: Business Logic / Mutation Engine
+- **EP-3**: State Management / Git Integration
+- **EP-4**: Registry / Configuration
+- **EP-5**: Safety & Guardrails / Security
+- **EP-6**: Monitoring & Observability
+- **EP-7**: Deployment & Operations
 
 ---
 
