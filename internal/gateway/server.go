@@ -7,6 +7,7 @@ import (
 	"github.com/caw/wrapper/internal/adapter"
 	"github.com/caw/wrapper/internal/memory"
 	"github.com/caw/wrapper/internal/security"
+	"github.com/caw/wrapper/internal/tools"
 	"github.com/gofiber/fiber/v2"
 	"github.com/redis/go-redis/v9"
 )
@@ -14,6 +15,7 @@ import (
 // Server is the top-level CAW API gateway.
 type Server struct {
 	app     *fiber.App
+	api     fiber.Router // /v1 group (stored so callers can add routes)
 	pool    *WorkerPool
 	backend adapter.InferenceBackend
 	session *memory.SessionStore
@@ -60,11 +62,19 @@ func NewServer(backend adapter.InferenceBackend, rdb *redis.Client, session *mem
 
 	return &Server{
 		app:     app,
+		api:     api,
 		pool:    pool,
 		backend: backend,
 		session: session,
 		rdb:     rdb,
 	}
+}
+
+// RegisterToolRoutes mounts GET /v1/tools and POST /v1/tools using the provided handler.
+// Call this after NewServer, before Listen.
+func (s *Server) RegisterToolRoutes(th *tools.ToolHandler) {
+	s.api.Get("/tools", th.ListTools)
+	s.api.Post("/tools", th.RegisterTool)
 }
 
 // Listen starts the HTTP server on the given address (e.g. ":8080").

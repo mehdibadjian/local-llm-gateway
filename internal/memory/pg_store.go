@@ -2,10 +2,24 @@ package memory
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// ToolRecord mirrors the tools table row for pg_store CRUD.
+type ToolRecord struct {
+	ID           string
+	Name         string
+	Description  string
+	InputSchema  json.RawMessage
+	ExecutorType string
+	EndpointURL  string
+	Enabled      bool
+	CreatedAt    time.Time
+}
 
 // HasQdrantPoint returns true if any chunk row has the given qdrant_point_id.
 func (p *PGStore) HasQdrantPoint(ctx context.Context, qdrantPointID string) (bool, error) {
@@ -133,4 +147,67 @@ func (p *PGStore) FTSSearch(ctx context.Context, domain, query string, limit int
 		chunks = append(chunks, c)
 	}
 	return chunks, rows.Err()
+}
+
+// ListTools returns all rows from the tools table.
+func (p *PGStore) ListTools(ctx context.Context) ([]ToolRecord, error) {
+	rows, err := p.pool.Query(ctx, `
+		SELECT id, name, description, input_schema, executor_type,
+		       COALESCE(endpoint_url,''), enabled, created_at
+		FROM tools ORDER BY created_at`)
+	if err != nil {
+		return nil, fmt.Errorf("list tools: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ToolRecord
+	for rows.Next() {
+		var t ToolRecord
+		if err := rows.Scan(&t.ID, &t.Name, &t.Description, &t.InputSchema,
+			&t.ExecutorType, &t.EndpointURL, &t.Enabled, &t.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan tool: %w", err)
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// GetTool returns the tool with the given name, or an error if not found.
+func (p *PGStore) GetTool(ctx context.Context, name string) (*ToolRecord, error) {
+	var t ToolRecord
+	err := p.pool.QueryRow(ctx, `
+		SELECT id, name, description, input_schema, executor_type,
+		       COALESCE(endpoint_url,''), enabled, created_at
+		FROM tools WHERE name = $1`, name,
+	).Scan(&t.ID, &t.Name, &t.Description, &t.InputSchema,
+		&t.ExecutorType, &t.EndpointURL, &t.Enabled, &t.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("get tool %q: %w", name, err)
+	}
+	return &t, nil
+}
+
+// CreateTool inserts a new tool row and returns the created record.
+func (p *PGStore) CreateTool(ctx context.Context, t ToolRecord) (*ToolRecord, error) {
+	schema := t.InputSchema
+	if schema == nil {
+		schema = json.RawMessage(`{}`)
+	}
+	var endpointURL *string
+	if t.EndpointURL != "" {
+		endpointURL = &t.EndpointURL
+	}
+
+	err := p.pool.QueryRow(ctx, `
+		INSERT INTO tools (name, description, input_schema, executor_type, endpoint_url, enabled)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, name, description, input_schema, executor_type,
+		          COALESCE(endpoint_url,''), enabled, created_at`,
+		t.Name, t.Description, schema, t.ExecutorType, endpointURL, t.Enabled,
+	).Scan(&t.ID, &t.Name, &t.Description, &t.InputSchema,
+		&t.ExecutorType, &t.EndpointURL, &t.Enabled, &t.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("create tool: %w", err)
+	}
+	return &t, nil
 }

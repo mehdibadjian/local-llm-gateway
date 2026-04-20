@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS tools (
     description    TEXT,
     input_schema   JSONB   NOT NULL,
     executor_type  TEXT    NOT NULL CHECK (executor_type IN ('builtin','subprocess','http')),
+    endpoint_url   TEXT,
     enabled        BOOLEAN NOT NULL DEFAULT true,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );`
