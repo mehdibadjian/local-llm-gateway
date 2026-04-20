@@ -69,3 +69,43 @@
 ✅ COMPLETED | ⛔ SKIPPED
 
 ---
+
+## 2025-06-17T00:00:00Z - US-18
+**Story:** EmbedSvc Deployment & Resources
+**Files changed:** deploy/helm/embed-service/Chart.yaml, values.yaml, templates/deployment.yaml, templates/prometheusrule.yaml
+**Tests:** 11 passed, 0 failed
+**Acceptance criteria met:**
+  - [x] Resource requests 200Mi / limits 512Mi defined in Helm chart
+  - [x] PrometheusRule fires on >2 restarts in 5-minute window
+  - [x] EMBED_CONCURRENCY=4 cap keeps memory within 512Mi
+  - [x] Circuit breaker activates after 3 consecutive failures (TestEmbedCircuitBreaker_OpensAfter3Failures)
+**Agent type:** general_purpose
+**Status:** ✅ COMPLETED
+---
+
+## 2025-06-17T00:00:01Z - US-19
+**Story:** EmbedSvc Circuit Breaker
+**Files changed:** internal/embed/circuit_breaker.go, internal/embed/client.go, tests/embed/circuit_breaker_test.go, tests/embed/client_test.go
+**Tests:** 11 passed, 0 failed
+**Acceptance criteria met:**
+  - [x] 3 failures → circuit open 30s, fail-fast (TestEmbedCircuitBreaker_OpensAfter3Failures, TestEmbedCircuitBreaker_FailFastWhenOpen)
+  - [x] Open circuit → ErrCircuitOpen returned, caller can set x-caw-rag-degraded header
+  - [x] 30s open + successful probe → circuit closes (TestEmbedCircuitBreaker_HalfOpenProbe, TestEmbedCircuitBreaker_ClosesOnSuccess)
+  - [x] Circuit trips → ErrCircuitOpen surfaced for RAG-degraded header logic (TestEmbedClient_CircuitOpen_SkipsService)
+  - [x] EmbedSvc killed mid-request → non-RAG requests continue (circuit isolates embed errors)
+**Agent type:** general_purpose
+**Status:** ✅ COMPLETED
+---
+
+## 2025-06-17T00:00:02Z - US-20
+**Story:** Embedding LRU Cache
+**Files changed:** internal/embed/lru_cache.go, tests/embed/lru_cache_test.go
+**Tests:** 11 passed, 0 failed
+**Acceptance criteria met:**
+  - [x] Same text twice → 1 gRPC call (TestEmbedClient_CachesResult)
+  - [x] 1K entries → LRU eviction (TestLRUCache_EvictsLRU, TestLRUCache_MemoryFootprint)
+  - [x] TTL expiry → fresh call issued (TestLRUCache_TTLExpiry)
+  - [x] 1K × 384-dim float32 ≈ 1.5 MB raw data (TestLRUCache_MemoryFootprint)
+**Agent type:** general_purpose
+**Status:** ✅ COMPLETED
+---
