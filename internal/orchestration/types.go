@@ -52,6 +52,8 @@ type OrchestrationResult struct {
 	CodeFeedback    bool   // whether code-execution feedback loop ran
 	CritiqueScore   int    // final critique score (0 if not critiqued)
 	WebSearched     bool   // whether web augmentation was applied
+	PEVApplied      bool   // whether PEV state machine was used
+	PEVScore        int    // PEV verify score (0 if PEV not applied)
 }
 
 // CompressionResult holds the outcome of a context-management pass.
