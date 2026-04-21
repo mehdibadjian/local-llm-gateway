@@ -114,11 +114,25 @@ func (a *BitNetAdapter) HealthCheck(ctx context.Context) error {
 }
 
 func (a *BitNetAdapter) doGenerate(ctx context.Context, req *GenerateRequest) (*GenerateResponse, error) {
+	maxTokens := req.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = 512
+	}
+
+	type msgBody struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	}
+	msgs := make([]msgBody, len(req.Messages))
+	for i, m := range req.Messages {
+		msgs[i] = msgBody{Role: m.Role, Content: m.Content}
+	}
+
 	body, err := json.Marshal(map[string]any{
-		"prompt":      messagesToPrompt(req.Messages),
-		"n_predict":   req.MaxTokens,
+		"model":       req.Model,
+		"messages":    msgs,
+		"max_tokens":  maxTokens,
 		"stream":      false,
-		"grammar":     req.Grammar,
 		"temperature": req.Temperature,
 	})
 	if err != nil {
@@ -126,7 +140,7 @@ func (a *BitNetAdapter) doGenerate(ctx context.Context, req *GenerateRequest) (*
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		a.baseURL+"/completion", bytes.NewReader(body))
+		a.baseURL+"/v1/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -143,38 +157,68 @@ func (a *BitNetAdapter) doGenerate(ctx context.Context, req *GenerateRequest) (*
 	}
 
 	var result struct {
-		Content string `json:"content"`
+		ID      string `json:"id"`
+		Model   string `json:"model"`
+		Choices []struct {
+			Message struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
+		} `json:"choices"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
+	if len(result.Choices) == 0 {
+		return nil, fmt.Errorf("bitnet: empty choices in response")
+	}
 
+	id := result.ID
+	if id == "" {
+		id = uuid.New().String()
+	}
 	return &GenerateResponse{
-		ID:     uuid.New().String(),
+		ID:     id,
 		Object: "chat.completion",
 		Model:  req.Model,
 		Choices: []Choice{
 			{
 				Index:        0,
-				Message:      Message{Role: "assistant", Content: result.Content},
-				FinishReason: "stop",
+				Message:      Message{Role: "assistant", Content: result.Choices[0].Message.Content},
+				FinishReason: result.Choices[0].FinishReason,
 			},
 		},
 	}, nil
 }
 
 func (a *BitNetAdapter) doStream(ctx context.Context, cancel context.CancelFunc, req *GenerateRequest) (<-chan *GenerateResponse, error) {
+	maxTokens := req.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = 512
+	}
+
+	type msgBody struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	}
+	msgs := make([]msgBody, len(req.Messages))
+	for i, m := range req.Messages {
+		msgs[i] = msgBody{Role: m.Role, Content: m.Content}
+	}
+
 	body, err := json.Marshal(map[string]any{
-		"prompt":  messagesToPrompt(req.Messages),
-		"stream":  true,
-		"grammar": req.Grammar,
+		"model":      req.Model,
+		"messages":   msgs,
+		"max_tokens": maxTokens,
+		"stream":     true,
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		a.baseURL+"/completion", bytes.NewReader(body))
+		a.baseURL+"/v1/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -201,27 +245,36 @@ func (a *BitNetAdapter) doStream(ctx context.Context, cancel context.CancelFunc,
 			if !strings.HasPrefix(line, "data: ") {
 				continue
 			}
-			var chunk struct {
-				Content string `json:"content"`
-				Stop    bool   `json:"stop"`
+			payload := line[6:]
+			if strings.TrimSpace(payload) == "[DONE]" {
+				return
 			}
-			if err := json.Unmarshal([]byte(line[6:]), &chunk); err != nil {
+			var chunk struct {
+				ID      string `json:"id"`
+				Choices []struct {
+					Delta struct {
+						Content string `json:"content"`
+					} `json:"delta"`
+					FinishReason *string `json:"finish_reason"`
+				} `json:"choices"`
+			}
+			if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
 				continue
 			}
-			if chunk.Content != "" {
+			if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
 				ch <- &GenerateResponse{
-					ID:     uuid.New().String(),
+					ID:     chunk.ID,
 					Object: "chat.completion.chunk",
 					Model:  req.Model,
 					Choices: []Choice{
 						{
 							Index: 0,
-							Delta: &Message{Role: "assistant", Content: chunk.Content},
+							Delta: &Message{Role: "assistant", Content: chunk.Choices[0].Delta.Content},
 						},
 					},
 				}
 			}
-			if chunk.Stop {
+			if len(chunk.Choices) > 0 && chunk.Choices[0].FinishReason != nil {
 				return
 			}
 		}

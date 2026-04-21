@@ -95,9 +95,13 @@ func (a *LlamaCppAdapter) HealthCheck(ctx context.Context) error {
 }
 
 func (a *LlamaCppAdapter) doGenerate(ctx context.Context, req *GenerateRequest) (*GenerateResponse, error) {
+	nPredict := req.MaxTokens
+	if nPredict <= 0 {
+		nPredict = -1 // -1 = generate until EOS in llama.cpp
+	}
 	body, err := json.Marshal(map[string]any{
 		"prompt":      messagesToPrompt(req.Messages),
-		"n_predict":   req.MaxTokens,
+		"n_predict":   nPredict,
 		"stream":      false,
 		"grammar":     req.Grammar,
 		"temperature": req.Temperature,
