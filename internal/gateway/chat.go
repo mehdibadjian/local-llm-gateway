@@ -38,6 +38,21 @@ func (h *Handler) chatComplete(c *fiber.Ctx, req *ChatCompletionRequest) error {
 	}
 	defer h.pool.Release()
 
+	// ── Semantic cache lookup ────────────────────────────────────────────────
+	var queryEmb []float32
+	if h.embedClient != nil && h.semCache != nil {
+		if text := lastUserMessage(req.Messages); text != "" {
+			if emb, err := h.embedClient.Embed(c.Context(), text); err == nil {
+				queryEmb = emb
+				if cached, ok := h.semCache.Lookup(emb, 0.95); ok {
+					c.Set("X-CAW-Cache-Hit", "semantic")
+					c.Set("Content-Type", "application/json")
+					return c.SendString(cached)
+				}
+			}
+		}
+	}
+
 	msgs := req.Messages
 
 	if req.SessionID != "" && h.historyMgr != nil {
@@ -71,7 +86,31 @@ func (h *Handler) chatComplete(c *fiber.Ctx, req *ChatCompletionRequest) error {
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(errResp(err.Error()))
 	}
-	return c.JSON(toChatResponse(resp))
+
+	chatResp := toChatResponse(resp)
+
+	// ── Semantic cache store ─────────────────────────────────────────────────
+	if queryEmb != nil {
+		if data, merr := json.Marshal(chatResp); merr == nil {
+			h.semCache.Store(queryEmb, string(data))
+		}
+	}
+
+	return c.JSON(chatResp)
+}
+
+// lastUserMessage returns the content of the last message with role "user",
+// falling back to the last message in the slice if none has that role.
+func lastUserMessage(msgs []adapter.Message) string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == "user" {
+			return msgs[i].Content
+		}
+	}
+	if len(msgs) > 0 {
+		return msgs[len(msgs)-1].Content
+	}
+	return ""
 }
 
 // chatStream handles streaming inference using SSE (Server-Sent Events).

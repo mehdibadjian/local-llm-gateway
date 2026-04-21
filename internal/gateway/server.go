@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/caw/wrapper/internal/adapter"
+	"github.com/caw/wrapper/internal/embed"
 	"github.com/caw/wrapper/internal/memory"
 	"github.com/caw/wrapper/internal/orchestration"
 	"github.com/caw/wrapper/internal/security"
@@ -26,12 +27,22 @@ type Server struct {
 
 // Handler holds the dependencies shared by all route handlers.
 type Handler struct {
-	pool      *WorkerPool
-	backend   adapter.InferenceBackend
-	session   *memory.SessionStore
-	historyMgr *memory.HistoryManager
-	rdb       *redis.Client
-	augmenter *orchestration.WebAugmenter // nil = no web augmentation
+	pool        *WorkerPool
+	backend     adapter.InferenceBackend
+	session     *memory.SessionStore
+	historyMgr  *memory.HistoryManager
+	rdb         *redis.Client
+	augmenter   *orchestration.WebAugmenter // nil = no web augmentation
+	embedClient embed.EmbedClient           // nil = semantic cache disabled
+	semCache    *SemanticCache
+}
+
+// WithEmbedClient attaches an embed client and initialises the semantic LRU
+// cache (256 entries). Returns the handler for fluent chaining.
+func (h *Handler) WithEmbedClient(ec embed.EmbedClient) *Handler {
+	h.embedClient = ec
+	h.semCache = NewSemanticCache(256)
+	return h
 }
 
 // NewServer wires the Fiber application, middleware chain, and all route handlers.
@@ -81,6 +92,17 @@ func NewServer(backend adapter.InferenceBackend, rdb *redis.Client, session *mem
 // enriches queries with live web results before sending them to the model.
 func (s *Server) RegisterWebAugmenter(wa *orchestration.WebAugmenter) {
 	s.handler.augmenter = wa
+}
+
+// RegisterEmbedClient attaches an embed client to the handler, enabling the
+// in-process semantic LRU cache (256 entries, cosine similarity ≥ 0.95).
+func (s *Server) RegisterEmbedClient(ec embed.EmbedClient) {
+	s.handler.WithEmbedClient(ec)
+}
+
+// Handler returns the underlying route Handler, primarily for use in tests.
+func (s *Server) Handler() *Handler {
+	return s.handler
 }
 
 // RegisterToolRoutes mounts GET /v1/tools and POST /v1/tools using the provided handler.
