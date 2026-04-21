@@ -188,6 +188,64 @@ func TestVLLMAdapter_OpenAICompat(t *testing.T) {
 	assert.Equal(t, "You are helpful", rawMsgs[0].(map[string]any)["content"])
 }
 
+// TestBitNetAdapter_SelectsFromEnv verifies INFERENCE_BACKEND=bitnet returns *BitNetAdapter.
+func TestBitNetAdapter_SelectsFromEnv(t *testing.T) {
+	t.Setenv("INFERENCE_BACKEND", "bitnet")
+	t.Setenv("BITNET_MODEL_QUANT", "i2_s") // required for valid construction
+	b, err := adapter.NewBackend()
+	require.NoError(t, err)
+	_, ok := b.(*adapter.BitNetAdapter)
+	assert.True(t, ok, "bitnet env → BitNetAdapter")
+}
+
+// TestBitNetAdapter_Generate_ReturnsContent verifies the adapter parses {"content":"hello"} correctly.
+func TestBitNetAdapter_Generate_ReturnsContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/completion", r.URL.Path)
+		_ = json.NewEncoder(w).Encode(map[string]any{"content": "hello"})
+	}))
+	defer server.Close()
+
+	t.Setenv("BITNET_BASE_URL", server.URL)
+	t.Setenv("BITNET_MODEL_QUANT", "i2_s")
+	a, err := adapter.NewBitNetAdapter()
+	require.NoError(t, err)
+
+	resp, err := a.Generate(context.Background(), &adapter.GenerateRequest{
+		Model:    "BitNet-b1.58-2B-4T",
+		Messages: []adapter.Message{{Role: "user", Content: "hello"}},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, resp.Choices, 1)
+	assert.Equal(t, "hello", resp.Choices[0].Message.Content)
+}
+
+// TestBitNetAdapter_InvalidQuant_ReturnsError verifies non-i2_s quant returns an error.
+func TestBitNetAdapter_InvalidQuant_ReturnsError(t *testing.T) {
+	t.Setenv("BITNET_MODEL_QUANT", "q4_k_m")
+	_, err := adapter.NewBitNetAdapter()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "i2_s")
+}
+
+// TestBitNetAdapter_HealthCheck verifies a 200 response at /health succeeds.
+func TestBitNetAdapter_HealthCheck(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/health", r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	t.Setenv("BITNET_BASE_URL", server.URL)
+	t.Setenv("BITNET_MODEL_QUANT", "i2_s")
+	a, err := adapter.NewBitNetAdapter()
+	require.NoError(t, err)
+
+	err = a.HealthCheck(context.Background())
+	assert.NoError(t, err)
+}
+
 // TestAdapterFactory_SelectsFromEnv verifies the correct concrete type is returned per env var.
 func TestAdapterFactory_SelectsFromEnv(t *testing.T) {
 	cases := []struct {

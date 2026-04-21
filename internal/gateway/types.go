@@ -15,6 +15,7 @@ type ChatCompletionRequest struct {
 	AgentMode  bool   `json:"agent_mode,omitempty"`
 	RAGEnabled bool   `json:"rag_enabled,omitempty"`
 	Domain     string `json:"domain,omitempty"`
+	SessionID  string `json:"session_id,omitempty"`
 }
 
 // ResponseFormat mirrors the OpenAI response_format field.

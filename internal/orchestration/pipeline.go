@@ -8,14 +8,16 @@ import (
 )
 
 // Pipeline wires together ContextManager, TaskPlanner, CoT decomposer,
-// OutputFormatter, code-feedback loop, SelfCritiquer, and WebAugmenter
-// into a single orchestration pass that amplifies gemma:2b without changing its weights.
+// OutputFormatter, code-feedback loop, SelfCritiquer, WebAugmenter, and the
+// PEV state machine into a single orchestration pass that amplifies gemma:2b
+// without changing its weights.
 type Pipeline struct {
 	contextMgr   *ContextManager
 	formatter    *OutputFormatter
 	critiquer    *SelfCritiquer
 	cot          *ChainOfThoughtDecomposer
 	codeFeedback *CodeFeedbackLoop
+	pev          *PEVOrchestrator
 	webAugmenter *WebAugmenter // nil = no web augmentation
 }
 
@@ -27,6 +29,7 @@ func NewPipeline(cm *ContextManager, formatter *OutputFormatter, critiquer *Self
 		critiquer:    critiquer,
 		cot:          NewChainOfThoughtDecomposer(formatter.Backend()),
 		codeFeedback: NewCodeFeedbackLoop(formatter.Backend()),
+		pev:          NewPEVOrchestrator(formatter.Backend()),
 	}
 }
 
@@ -78,34 +81,48 @@ func (p *Pipeline) Run(ctx context.Context, req OrchestrationRequest) (*Orchestr
 		Stream:   req.Stream,
 	}
 
-	// 3. Generate — CoT path for complex reasoning, direct path otherwise.
+	// 3. Generate — PEV for code/complex-reasoning, CoT fallback, direct path otherwise.
 	var content string
 	var formatErr bool
 
 	switch intent {
 	case IntentComplexReasoning:
-		content, err = p.cot.Decompose(ctx, genReq)
+		var pevScore int
+		content, pevScore, err = p.pev.Run(ctx, genReq)
 		if err != nil {
-			// CoT failed — fall back to direct generation.
-			content, formatErr, err = p.formatter.Format(ctx, genReq, IntentSimpleGenerate)
+			// PEV failed — fall back to CoT.
+			content, err = p.cot.Decompose(ctx, genReq)
 			if err != nil {
-				return nil, fmt.Errorf("fallback generate: %w", err)
+				content, formatErr, err = p.formatter.Format(ctx, genReq, IntentSimpleGenerate)
+				if err != nil {
+					return nil, fmt.Errorf("fallback generate: %w", err)
+				}
+			} else {
+				result.CoTApplied = true
 			}
 		} else {
-			result.CoTApplied = true
+			result.PEVApplied = true
+			result.PEVScore = pevScore
 		}
 
 	case IntentCodeGeneration:
-		// Direct generation first.
-		content, formatErr, err = p.formatter.Format(ctx, genReq, intent)
+		var pevScore int
+		content, pevScore, err = p.pev.Run(ctx, genReq)
 		if err != nil {
-			return nil, fmt.Errorf("code generate: %w", err)
-		}
-		// 4. Code execution feedback loop.
-		improved, ran, feedbackErr := p.codeFeedback.Run(ctx, content, genReq)
-		if feedbackErr == nil && ran {
-			content = improved
-			result.CodeFeedback = true
+			// PEV failed — fall back to direct generation + code-feedback loop.
+			content, formatErr, err = p.formatter.Format(ctx, genReq, intent)
+			if err != nil {
+				return nil, fmt.Errorf("code generate: %w", err)
+			}
+			// 4. Code execution feedback loop.
+			improved, ran, feedbackErr := p.codeFeedback.Run(ctx, content, genReq)
+			if feedbackErr == nil && ran {
+				content = improved
+				result.CodeFeedback = true
+			}
+		} else {
+			result.PEVApplied = true
+			result.PEVScore = pevScore
 		}
 
 	default:

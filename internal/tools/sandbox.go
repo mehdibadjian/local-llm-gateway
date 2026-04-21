@@ -5,12 +5,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tetratelabs/wazero"
+	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
+	wazerosys "github.com/tetratelabs/wazero/sys"
 )
 
 // SandboxConfig holds limits applied to subprocess tool executions.
@@ -56,6 +61,11 @@ func NewSandbox(cfg SandboxConfig) *Sandbox {
 func (s *Sandbox) Run(ctx context.Context, tool *Tool, call ToolCall) (*ToolResult, error) {
 	start := time.Now()
 
+	// WASM path: isolated wazero execution, workspace-only FS, 10s hard timeout.
+	if os.Getenv("CODEEXEC_RUNTIME") == "wasm" {
+		return s.runWasm(ctx, call, start)
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.timeoutSecs)*time.Second)
 	defer cancel()
 
@@ -72,6 +82,89 @@ func (s *Sandbox) Run(ctx context.Context, tool *Tool, call ToolCall) (*ToolResu
 		return &ToolResult{
 			ToolCallID: call.ID,
 			Error:      errMsg,
+			DurationMs: time.Since(start).Milliseconds(),
+		}, nil
+	}
+
+	return &ToolResult{
+		ToolCallID: call.ID,
+		Output:     stdout.String(),
+		DurationMs: time.Since(start).Milliseconds(),
+	}, nil
+}
+
+// runWasm executes a .wasm binary via wazero in interpreter mode.
+// The execution is sandboxed to ./workspace (WASI fs mount), has no network
+// access, and is hard-limited to a 10-second context timeout.
+func (s *Sandbox) runWasm(ctx context.Context, call ToolCall, start time.Time) (*ToolResult, error) {
+	var input struct {
+		WasmPath string `json:"wasm_path"`
+	}
+	if err := json.Unmarshal(call.Input, &input); err != nil || input.WasmPath == "" {
+		return &ToolResult{
+			ToolCallID: call.ID,
+			Error:      "wasm_path is required in call input",
+			DurationMs: time.Since(start).Milliseconds(),
+		}, nil
+	}
+	if !strings.HasSuffix(input.WasmPath, ".wasm") {
+		return &ToolResult{
+			ToolCallID: call.ID,
+			Error:      "only .wasm binaries are supported",
+			DurationMs: time.Since(start).Milliseconds(),
+		}, nil
+	}
+
+	// The wasm path enforces its own 10s hard deadline; a shorter parent deadline wins.
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	if err := os.MkdirAll("./workspace", 0750); err != nil {
+		return &ToolResult{
+			ToolCallID: call.ID,
+			Error:      fmt.Sprintf("workspace setup failed: %s", err),
+			DurationMs: time.Since(start).Milliseconds(),
+		}, nil
+	}
+
+	wasmBytes, err := os.ReadFile(input.WasmPath)
+	if err != nil {
+		return &ToolResult{
+			ToolCallID: call.ID,
+			Error:      err.Error(),
+			DurationMs: time.Since(start).Milliseconds(),
+		}, nil
+	}
+
+	r := wazero.NewRuntimeWithConfig(ctx,
+		wazero.NewRuntimeConfigInterpreter().WithCloseOnContextDone(true))
+	defer r.Close(ctx) //nolint:errcheck
+
+	if _, err := wasi_snapshot_preview1.Instantiate(ctx, r); err != nil {
+		return &ToolResult{
+			ToolCallID: call.ID,
+			Error:      fmt.Sprintf("wasi instantiation failed: %s", err),
+			DurationMs: time.Since(start).Milliseconds(),
+		}, nil
+	}
+
+	var stdout bytes.Buffer
+	config := wazero.NewModuleConfig().
+		WithStdout(&stdout).
+		WithStderr(io.Discard).
+		WithFS(os.DirFS("./workspace"))
+
+	_, execErr := r.InstantiateWithConfig(ctx, wasmBytes, config)
+	if execErr != nil {
+		// Exit code 0 is a clean WASI exit — not an error.
+		if exitErr, ok := execErr.(*wazerosys.ExitError); ok && exitErr.ExitCode() == 0 {
+			execErr = nil
+		}
+	}
+	if execErr != nil {
+		return &ToolResult{
+			ToolCallID: call.ID,
+			Error:      execErr.Error(),
 			DurationMs: time.Since(start).Milliseconds(),
 		}, nil
 	}

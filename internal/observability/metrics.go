@@ -1,6 +1,10 @@
 package observability
 
-import "github.com/prometheus/client_golang/prometheus"
+import (
+	"runtime"
+
+	"github.com/prometheus/client_golang/prometheus"
+)
 
 var (
 	// RequestsInFlight — current worker pool occupancy (KEDA trigger metric).
@@ -33,6 +37,16 @@ var (
 		Name: "caw_critique_pass_total",
 		Help: "Total self-critique passes applied.",
 	}, []string{"trigger"})
+
+	// HeapAllocMB — current Go heap allocation in megabytes.
+	HeapAllocMB = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "caw_heap_alloc_mb",
+		Help: "Current Go heap allocation in megabytes.",
+	}, func() float64 {
+		var ms runtime.MemStats
+		runtime.ReadMemStats(&ms)
+		return float64(ms.HeapAlloc) / (1024 * 1024)
+	})
 )
 
 // RegisterMetrics registers the 5 metrics owned by this package with the
@@ -45,5 +59,6 @@ func RegisterMetrics() {
 		IngestDLQDepth,
 		RAGDegradedTotal,
 		CritiquePassTotal,
+		HeapAllocMB,
 	)
 }

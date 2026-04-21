@@ -49,21 +49,13 @@ func (m *MockResponder) GetResponse(_ context.Context, prompt string) (string, e
 	if strings.Contains(prompt, "Python function") {
 		return "def solution():\n    pass\n", nil
 	}
-	// For MMLU prompts the harness embeds the answer letter in the prompt.
-	// Return a generic "A" — the evaluator extracts the letter and compares.
-	// The dry-run mock always returns the correct answer embedded in the prompt.
-	return extractExpectedAnswer(prompt), nil
-}
-
-// extractExpectedAnswer parses the answer letter we inject into MMLU prompts.
-func extractExpectedAnswer(prompt string) string {
-	// The harness appends "Correct answer: X" at the end of the prompt so the
-	// mock can reflect it back without knowing the question.
-	re := regexp.MustCompile(`Correct answer: ([A-D])`)
-	if m := re.FindStringSubmatch(prompt); len(m) == 2 {
-		return m[1]
+	// Look up the correct answer by matching the question text in the prompt.
+	for _, q := range SampleMMLUQuestions {
+		if strings.Contains(prompt, q.Question) {
+			return q.Answer, nil
+		}
 	}
-	return "A"
+	return "A", nil
 }
 
 // openAIRequest is the minimal JSON body sent to the CAW endpoint.
@@ -261,7 +253,6 @@ func (h *Harness) runHumanEval(ctx context.Context) (ScoreResult, error) {
 }
 
 // buildMMLUPrompt constructs a prompt for a MMLU question.
-// The correct answer is appended so the MockResponder can reflect it back.
 func buildMMLUPrompt(q MMLUQuestion) string {
 	var sb strings.Builder
 	sb.WriteString("Answer the following multiple-choice question with only the letter of the correct answer (A, B, C, or D).\n\n")
@@ -273,8 +264,7 @@ func buildMMLUPrompt(q MMLUQuestion) string {
 			fmt.Fprintf(&sb, "%s) %s\n", k, v)
 		}
 	}
-	// Append expected answer for MockResponder reflection — stripped by the evaluator.
-	fmt.Fprintf(&sb, "\nCorrect answer: %s", q.Answer)
+	sb.WriteString("\nAnswer:")
 	return sb.String()
 }
 
@@ -296,6 +286,7 @@ func extractAnswerLetter(response string) string {
 }
 
 // ContainsPythonFunctionDef reports whether s contains a Python function definition.
+// Matches both line-initial "def foo():" and inline "Answer: def foo():" patterns.
 func ContainsPythonFunctionDef(s string) bool {
-	return regexp.MustCompile(`(?m)^\s*def\s+\w+\s*\(`).MatchString(s)
+	return regexp.MustCompile(`(?m)(^\s*def\s+\w+\s*\(|[^a-z]def\s+\w+\s*\()`).MatchString(s)
 }

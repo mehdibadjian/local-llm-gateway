@@ -4,13 +4,36 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/caw/wrapper/internal/adapter"
+	"github.com/caw/wrapper/internal/grammar"
 	"github.com/redis/go-redis/v9"
 )
+
+// ErrForbiddenCommand is returned when preDispatchFilter detects a blocked token
+// in a subprocess or plugin tool call's input.
+var ErrForbiddenCommand = errors.New("forbidden command")
+
+// blockedTokens is the deny-list scanned for subprocess and plugin executors.
+var blockedTokens = []string{"chmod", "sudo", "curl", "wget", "rm -rf", "eval", "base64"}
+
+// preDispatchFilter performs a case-insensitive string scan of call.Input against
+// blockedTokens. Must only be called for subprocess and plugin executor types.
+func preDispatchFilter(call ToolCall) error {
+	input := strings.ToLower(string(call.Input))
+	for _, token := range blockedTokens {
+		if strings.Contains(input, token) {
+			return fmt.Errorf("forbidden command %q: %w", token, ErrForbiddenCommand)
+		}
+	}
+	return nil
+}
 
 // Dispatcher routes ToolCall executions to the correct executor backend.
 type Dispatcher struct {
@@ -48,6 +71,18 @@ func NewDispatcherWithLearn(registry *Registry, sandbox *Sandbox, rdb *redis.Cli
 	}
 }
 
+// EnrichRequestWithGrammar populates req.Grammar with the JSON tool-call grammar
+// so that the inference backend constrains its output to valid JSON tool calls.
+func EnrichRequestWithGrammar(req *adapter.GenerateRequest) {
+	if req.Grammar != "" {
+		return
+	}
+	g, err := grammar.LoadGrammar("json")
+	if err == nil {
+		req.Grammar = g
+	}
+}
+
 // Execute resolves the named tool and delegates to the appropriate executor.
 // Built-in tools (web_search, web_fetch) are handled directly without a registry lookup.
 func (d *Dispatcher) Execute(ctx context.Context, call ToolCall) (*ToolResult, error) {
@@ -68,10 +103,16 @@ func (d *Dispatcher) Execute(ctx context.Context, call ToolCall) (*ToolResult, e
 	case "builtin":
 		return d.executeBuiltin(ctx, tool, call)
 	case "subprocess":
+		if err := preDispatchFilter(call); err != nil {
+			return nil, err
+		}
 		return d.sandbox.Run(ctx, tool, call)
 	case "http":
 		return d.executeHTTP(ctx, tool, call)
 	case "plugin":
+		if err := preDispatchFilter(call); err != nil {
+			return nil, err
+		}
 		return d.executePlugin(ctx, tool, call)
 	}
 	return nil, fmt.Errorf("unknown executor type: %s", tool.ExecutorType)

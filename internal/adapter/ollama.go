@@ -93,13 +93,17 @@ func (a *OllamaAdapter) HealthCheck(ctx context.Context) error {
 }
 
 func (a *OllamaAdapter) doGenerate(ctx context.Context, req *GenerateRequest) (*GenerateResponse, error) {
+	numPredict := req.MaxTokens
+	if numPredict <= 0 {
+		numPredict = -1 // -1 = generate until EOS in Ollama
+	}
 	body, err := json.Marshal(map[string]any{
 		"model":  req.Model,
 		"prompt": messagesToPrompt(req.Messages),
 		"stream": false,
 		"format": req.Format,
 		"options": map[string]any{
-			"num_predict": req.MaxTokens,
+			"num_predict": numPredict,
 			"temperature": req.Temperature,
 		},
 	})

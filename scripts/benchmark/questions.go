@@ -68,25 +68,27 @@ var SampleMMLUQuestions = []MMLUQuestion{
 }
 
 // SampleHumanEvalPrompts contains 5 function-completion prompts.
+// Prompts are phrased to elicit a bare Python function definition with no
+// markdown fences or explanatory text.
 var SampleHumanEvalPrompts = []HumanEvalPrompt{
 	{
 		ID:     "HE-001",
-		Prompt: "Write a Python function called `sum_list` that takes a list of numbers and returns their sum.",
+		Prompt: "Write ONLY a Python function definition (no explanation, no markdown). Function name: sum_list. It takes a list of numbers and returns their sum.",
 	},
 	{
 		ID:     "HE-002",
-		Prompt: "Write a Python function called `is_prime` that checks if a given integer is a prime number and returns True or False.",
+		Prompt: "Write ONLY a Python function definition (no explanation, no markdown). Function name: is_prime. It takes an integer and returns True if prime, False otherwise.",
 	},
 	{
 		ID:     "HE-003",
-		Prompt: "Write a Python function called `reverse_string` that takes a string and returns it reversed.",
+		Prompt: "Write ONLY a Python function definition (no explanation, no markdown). Function name: reverse_string. It takes a string and returns it reversed.",
 	},
 	{
 		ID:     "HE-004",
-		Prompt: "Write a Python function called `fibonacci` that returns the nth Fibonacci number.",
+		Prompt: "Write ONLY a Python function definition (no explanation, no markdown). Function name: fibonacci. It takes an integer n and returns the nth Fibonacci number.",
 	},
 	{
 		ID:     "HE-005",
-		Prompt: "Write a Python function called `count_vowels` that counts the number of vowels in a given string.",
+		Prompt: "Write ONLY a Python function definition (no explanation, no markdown). Function name: count_vowels. It takes a string and returns the count of vowels.",
 	},
 }

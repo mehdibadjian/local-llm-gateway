@@ -9,6 +9,7 @@ import (
 	"github.com/caw/wrapper/internal/gateway"
 	"github.com/caw/wrapper/internal/mcp"
 	"github.com/caw/wrapper/internal/memory"
+	"github.com/caw/wrapper/internal/observability"
 	"github.com/caw/wrapper/internal/orchestration"
 	"github.com/caw/wrapper/internal/tools"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -17,6 +18,12 @@ import (
 
 func main() {
 	ctx := context.Background()
+
+	// ── RAM watchdog ──────────────────────────────────────────────────────────
+	stopWatchdog := observability.StartRAMWatchdog(ctx, 5120, func() {
+		log.Println("RESOURCE_EXHAUSTED: heap threshold exceeded")
+	})
+	defer stopWatchdog()
 
 	// ── Redis ─────────────────────────────────────────────────────────────────
 	redisAddr := os.Getenv("REDIS_ADDR")

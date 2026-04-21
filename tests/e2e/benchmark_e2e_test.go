@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -298,14 +299,29 @@ func buildMMLUPrompt(q bm.MMLUQuestion) string {
 
 func extractLetter(s string) string {
 	s = strings.TrimSpace(s)
+
+	// Handle "(C)" / "(C) Paris" / "(C): Paris" patterns
+	reParens := regexp.MustCompile(`\(([A-D])\)`)
+	if m := reParens.FindStringSubmatch(s); len(m) == 2 {
+		return m[1]
+	}
+
+	// Handle "Answer: C" / "Answer is C" / "The answer is C"
+	reAnswer := regexp.MustCompile(`(?i)answer[^A-D]*([A-D])\b`)
+	if m := reAnswer.FindStringSubmatch(s); len(m) == 2 {
+		return m[1]
+	}
+
+	// Bare letter at start
 	for _, ch := range []string{"A", "B", "C", "D"} {
 		if strings.HasPrefix(s, ch) {
 			return ch
 		}
 	}
-	// scan for standalone letter
+
+	// Standalone letter word
 	for _, word := range strings.Fields(s) {
-		w := strings.Trim(word, ".,):*")
+		w := strings.Trim(word, ".,):(*")
 		if w == "A" || w == "B" || w == "C" || w == "D" {
 			return w
 		}
