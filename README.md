@@ -37,6 +37,20 @@ CAW is designed to be used as a drop-in `ANTHROPIC_BASE_URL` for Claude Code CLI
 
 ---
 
+## Use Cases
+
+| Use case | How CAW helps |
+|---|---|
+| **Offline coding assistant** | Use Claude Code CLI or Cursor with `ANTHROPIC_BASE_URL=http://localhost:8080` — get tool calling, multi-step reasoning, and RAG over your codebase without sending a single byte to the cloud |
+| **Private document Q&A** | Ingest internal PDFs/wikis into Qdrant; ask questions against them with full RAG retrieval — nothing leaves your machine |
+| **Air-gapped / regulated environments** | Hospitals, defence, finance — run the full stack on an isolated server; no external API dependencies at runtime |
+| **Zero-cost CI/CD code review** | Wire CAW into a GitHub Actions job as a local LLM reviewer; no per-token API cost, no data egress |
+| **Agentic workflow prototyping** | Iterate on multi-step agent designs (tool calls, self-critique loops, structured JSON output) before paying for frontier API credits |
+| **Edge / IoT inference** | Deploy to a $24 Droplet or Raspberry Pi 5; KEDA scales to zero when idle so you pay only for active inference |
+| **Multi-tenant SaaS backend** | JWT-based tenant isolation, per-domain Qdrant collections, and Redis rate limiting — ship a white-label AI feature without a third-party LLM dependency |
+
+---
+
 ## How the Agentic Loop Works
 
 When a request arrives with a `tools` array (e.g. from Claude Code CLI):
