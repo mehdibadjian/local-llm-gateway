@@ -55,15 +55,21 @@ CAW is designed to be used as a drop-in `ANTHROPIC_BASE_URL` for Claude Code CLI
 
 When a request arrives with a `tools` array (e.g. from Claude Code CLI):
 
-```
-Claude Code CLI ──► CAW (Go) ──► BitNet-b1.58-2B-4T
-                     │  ▲
-                     │  │  "write bash block, say DONE when done"
-                     ▼  │
-                   bash execution
-                   (server-side)
-                     │
-                     └─► output fed back ──► next step ──► DONE
+```mermaid
+sequenceDiagram
+    participant CLI as Claude Code CLI
+    participant CAW as CAW (Go)
+    participant Model as BitNet-b1.58-2B-4T
+    participant Exec as Bash Executor
+
+    CLI->>CAW: POST /v1/chat/completions (tools array)
+    CAW->>Model: Rewritten prompt — "emit ```bash blocks, say DONE when done"
+    Model-->>CAW: ```bash <command>```
+    CAW->>Exec: Execute command (server-side sandbox)
+    Exec-->>CAW: stdout / stderr
+    CAW->>Model: Feed output back as next turn context
+    Model-->>CAW: DONE: <final answer>
+    CAW-->>CLI: Completed response (no tool round-trips)
 ```
 
 1. CAW rewrites the system prompt to instruct the model to emit ```` ```bash ```` blocks  
@@ -77,39 +83,45 @@ Claude Code CLI ──► CAW (Go) ──► BitNet-b1.58-2B-4T
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                     API Gateway (Fiber)                  │
-│  OpenAI-compatible HTTP · SSE streaming · Worker pool   │
-│  JWT multi-tenant auth · Bearer token auth · /healthz   │
-└───────────────────────┬─────────────────────────────────┘
-                        │
-        ┌───────────────┼───────────────┐
-        ▼               ▼               ▼
-┌──────────────┐ ┌────────────┐ ┌─────────────────┐
-│Orchestration │ │  Memory    │ │  Tool Registry  │
-│ContextManager│ │  Layer     │ │  Dispatcher     │
-│ TaskPlanner  │ │  Redis     │ │  CodeExecutor   │
-│ OutputFormat │ │  Qdrant    │ │  (gVisor/native)│
-│ Self-Critique│ │  Postgres  │ │  Plugin System  │
-└──────┬───────┘ └─────┬──────┘ └────────┬────────┘
-       │               │                 │
-       └───────────────┼─────────────────┘
-                       ▼
-          ┌────────────────────────┐
-          │   Inference Adapter    │
-          │  OllamaAdapter         │
-          │  LlamaCppAdapter       │
-          │  BitNetAdapter         │
-          │  vLLMAdapter (Phase 2) │
-          └───────────┬────────────┘
-                      ▼
-          ┌────────────────────────┐
-          │   Local Model          │
-          │   BitNet-b1.58-2B-4T   │
-          │   gemma:2b / llama3    │
-          │   (via Ollama / llama.cpp / BitNet)│
-          └────────────────────────┘
+```mermaid
+graph TD
+    GW["API Gateway (Fiber)\nOpenAI-compat HTTP · SSE streaming · Worker pool\nJWT multi-tenant auth · Bearer token · /healthz"]
+
+    GW --> ORC
+    GW --> MEM
+    GW --> TOOL
+
+    subgraph ORC["Orchestration"]
+        CM["ContextManager"]
+        TP["TaskPlanner"]
+        OF["OutputFormatter"]
+        SC["Self-Critique"]
+    end
+
+    subgraph MEM["Memory Layer"]
+        RD["Redis\nsession store"]
+        QD["Qdrant\nvector collections"]
+        PG["PostgreSQL\nmetadata + FTS"]
+    end
+
+    subgraph TOOL["Tool Registry"]
+        TD["Dispatcher"]
+        CE["CodeExecutor\n(gVisor / native)"]
+        PS["Plugin System"]
+    end
+
+    ORC --> IA
+    MEM --> IA
+    TOOL --> IA
+
+    subgraph IA["Inference Adapter"]
+        OA["OllamaAdapter"]
+        LA["LlamaCppAdapter"]
+        BA["BitNetAdapter"]
+        VA["vLLMAdapter (Phase 2)"]
+    end
+
+    IA --> LM["Local Model\nBitNet-b1.58-2B-4T · gemma:2b · llama3\n(Ollama / llama.cpp / BitNet)"]
 ```
 
 ### Layer Summary
