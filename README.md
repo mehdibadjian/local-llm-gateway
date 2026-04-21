@@ -235,6 +235,38 @@ claude   # or: claude "write a prime factorization function and test it"
 
 CAW intercepts every tool call, executes it server-side, and returns finished results.
 
+### 5 — Use with Hermes Agent
+
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) is a self-improving AI agent with a built-in skills system, persistent memory, and 40+ tools. The `hermes-caw.sh` script starts CAW and Hermes together, with Hermes pre-configured to use CAW as its inference backend and tool registry.
+
+```bash
+# Start CAW + Hermes in one command
+CAW_API_KEY=dev-key ./scripts/hermes-caw.sh
+
+# Start only CAW (no Hermes)
+./scripts/hermes-caw.sh --caw-only
+
+# Attach Hermes to an already-running CAW
+CAW_API_KEY=dev-key ./scripts/hermes-caw.sh --hermes-only
+
+# Override port or Ollama endpoint
+CAW_API_KEY=dev-key PORT=9090 OLLAMA_BASE_URL=http://localhost:11434 ./scripts/hermes-caw.sh
+```
+
+Once Hermes is running, it routes all inference through CAW (`localhost:8080/v1`) and discovers CAW's tool registry via MCP (`localhost:8080/mcp`). Use it for autonomous background tasks:
+
+```
+# Inside Hermes:
+> implement the failing tests in tests/gateway/ and commit
+> run the MMLU benchmark and summarise the results
+```
+
+For headless execution (no interactive prompt):
+
+```bash
+CAW_API_KEY=dev-key hermes --no-interactive "implement US-14 from docs/reference/agile-backlog.md, run tests, commit"
+```
+
 ### 5 — Stream a response
 
 ```bash
@@ -306,6 +338,7 @@ Without `CAW_JWT_SECRET`, the service falls back to API key auth (backward compa
 ├── scripts/
 │   ├── benchmark/        # MMLU + HumanEval benchmark harness (Go package)
 │   ├── start-bitnet-stack.sh  # One-shot macOS launcher: auto-provisions PG + Redis, starts BitNet + CAW
+│   ├── hermes-caw.sh     # Start CAW + Hermes Agent together (or independently via flags)
 │   └── migrate_qdrant.go # Qdrant collection migration CLI
 ├── deploy/
 │   ├── helm/             # Helm charts (caw-wrapper, embed-service, qdrant-distributed,
@@ -518,6 +551,9 @@ REDIS_ADDR=localhost:6379 \
 # Or use the one-shot launcher (auto-provisions everything on macOS)
 ./scripts/start-bitnet-stack.sh
 
+# Start CAW + Hermes Agent (full integration)
+CAW_API_KEY=dev-key ./scripts/hermes-caw.sh
+
 # Lint
 go vet ./...
 
@@ -566,12 +602,53 @@ Quick checklist:
 #### 🚀 macOS auto-provisioning launcher
 - `scripts/start-bitnet-stack.sh` now automatically installs and starts **PostgreSQL 16** and **Redis** via Homebrew if they are not already running, creates the `caw` role and database, and waits for readiness before starting CAW — zero manual setup required on a fresh Mac.
 
+#### 🤖 Hermes Agent integration (`scripts/hermes-caw.sh`)
+- New `scripts/hermes-caw.sh` starts CAW and [Hermes Agent](https://github.com/NousResearch/hermes-agent) together with a single command.
+- Hermes is pointed at CAW's OpenAI-compatible `/v1` endpoint and MCP tool registry at `/mcp`.
+- Flags: `--caw-only` (start only CAW), `--hermes-only` (attach Hermes to a running CAW).
+- All env vars (`CAW_API_KEY`, `PORT`, `OLLAMA_BASE_URL`, etc.) are forwarded automatically.
+- `~/.hermes/config.yaml` is pre-configured during `hermes install` to use CAW as the default provider.
+
 #### ✅ Benchmark e2e tests fixed and passing
 - `TestE2E_BenchmarkNorthStar` now passes: **MMLU 90%, HumanEval 100%, gap closed 200.8%**.
 - Fixed `buildMMLUPrompt` leaking the correct answer into live model prompts (was designed for `MockResponder` only).
 - Fixed `MockResponder` to look up answers from `SampleMMLUQuestions` instead of parsing the prompt.
 - Fixed `extractLetter` to handle `(C) Paris` format responses.
 - Fixed `ContainsPythonFunctionDef` to match `def` inside code fences and inline after explanatory text.
+
+---
+
+## Hermes Agent Integration
+
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) integrates with CAW at two levels:
+
+| Integration | How ||
+|---|---|---|
+| **Inference** | Hermes routes all LLM calls through CAW's `/v1/chat/completions` | Local model gets Hermes' full agentic loop on top of CAW's orchestration |
+| **Tool registry** | Hermes connects to CAW's MCP server at `/mcp` | Hermes can invoke any CAW tool (code executor, RAG retrieval, web search) natively |
+
+### Quick setup
+
+```bash
+# Install Hermes (one-time)
+curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
+
+# Start both
+CAW_API_KEY=dev-key ./scripts/hermes-caw.sh
+```
+
+Hermes is pre-configured via `~/.hermes/config.yaml` (written during setup):
+- **Provider:** `custom` → `http://localhost:8080/v1`
+- **MCP server:** `caw` → `http://localhost:8080/mcp` with `Authorization: Bearer ${CAW_API_KEY}`
+
+### Usage patterns
+
+| Pattern | Command |
+|---|---|
+| Interactive agent | `./scripts/hermes-caw.sh` then chat inside Hermes |
+| Headless task | `hermes --no-interactive "<task>"` |
+| Attach to running CAW | `./scripts/hermes-caw.sh --hermes-only` |
+| CAW only (no Hermes) | `./scripts/hermes-caw.sh --caw-only` |
 
 ---
 
