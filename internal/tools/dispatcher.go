@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/caw/wrapper/internal/adapter"
+	"github.com/caw/wrapper/internal/grammar"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -45,6 +47,18 @@ func NewDispatcherWithLearn(registry *Registry, sandbox *Sandbox, rdb *redis.Cli
 		sandbox:   sandbox,
 		webSearch: NewWebSearchExecutor(rdb),
 		webFetch:  NewWebFetchExecutor(rdb),
+	}
+}
+
+// EnrichRequestWithGrammar populates req.Grammar with the JSON tool-call grammar
+// so that the inference backend constrains its output to valid JSON tool calls.
+func EnrichRequestWithGrammar(req *adapter.GenerateRequest) {
+	if req.Grammar != "" {
+		return
+	}
+	g, err := grammar.LoadGrammar("json")
+	if err == nil {
+		req.Grammar = g
 	}
 }
 
