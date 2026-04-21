@@ -10,6 +10,8 @@ func NewBackend() (InferenceBackend, error) {
 		return NewLlamaCppAdapter(), nil
 	case "vllm":
 		return NewVLLMAdapter(), nil
+	case "bitnet":
+		return NewBitNetAdapter()
 	default: // "ollama" or empty
 		return NewOllamaAdapter(), nil
 	}
