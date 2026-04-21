@@ -74,6 +74,24 @@
 ## Legend
 ✅ COMPLETED | ⛔ SKIPPED
 
+### Sonnet-Level Optimization — Apple M3 (T1–T10)
+**Branch:** sprint-sonnet-optimization
+**Files:**
+- internal/adapter/bitnet.go, internal/adapter/factory.go (T1)
+- internal/embed/onnx_client.go, internal/embed/onnx_client_stub.go, internal/embed/factory.go (T2)
+- internal/adapter/semaphore.go (T3)
+- internal/orchestration/pev.go, internal/orchestration/pipeline.go, internal/orchestration/types.go (T4)
+- internal/grammar/json.gbnf, internal/grammar/bash.gbnf, internal/grammar/grammar.go (T5)
+- internal/memory/history_manager.go, internal/gateway/chat.go (T6)
+- internal/tools/sandbox.go (wazero path), go.mod (T7)
+- internal/tools/dispatcher.go (ErrForbiddenCommand, preDispatchFilter) (T8)
+- internal/gateway/semantic_cache.go, internal/gateway/chat.go, internal/gateway/server.go (T9)
+- internal/observability/watchdog.go, internal/observability/metrics.go, cmd/wrapper/main.go (T10)
+**Tests:** 312 passing · 14/14 packages green · 0 failures
+**Commits:** 10 (one per task, TDD red→green→refactor)
+**Status:** ✅ COMPLETED
+---
+
 ### EP-12 — Phase 3 Backlog (US-37, US-38, US-39, US-40, US-41, US-42, US-43, US-44)
 **Files:**
 - internal/security/jwt.go, tests/security/jwt_test.go (US-37)
