@@ -3,6 +3,7 @@ package tools_test
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"runtime"
 	"testing"
 	"time"
@@ -11,6 +12,21 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// loopWasm is a minimal WASM module that exports "_start" as an infinite loop.
+// Binary encoding of: (module (func (export "_start") (loop (br 0))))
+var loopWasm = []byte{
+	0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, // magic + version
+	0x01, 0x04, 0x01, 0x60, 0x00, 0x00,              // type section: () -> ()
+	0x03, 0x02, 0x01, 0x00,                           // function section: 1 func using type 0
+	0x07, 0x0a, 0x01, 0x06, 0x5f, 0x73, 0x74, 0x61, 0x72, 0x74, 0x00, 0x00, // export: "_start"
+	0x0a, 0x09, 0x01, 0x07, 0x00, 0x03, 0x40, 0x0c, 0x00, 0x0b, 0x0b,      // code: loop { br 0 }
+}
+
+func wasmCall(wasmPath string) tools.ToolCall {
+	input, _ := json.Marshal(map[string]string{"wasm_path": wasmPath})
+	return tools.ToolCall{ID: "wasm-call", ToolName: "code-exec", Input: input}
+}
 
 func newTestSandbox(timeoutSec int) *tools.Sandbox {
 	return tools.NewSandbox(tools.SandboxConfig{
@@ -99,4 +115,71 @@ func TestSandbox_LinuxCgroupCommand_Built(t *testing.T) {
 	cmd := s.BuildCommandForTest(ctx, echoTool(), callWithArgs("echo", "linux"))
 	assert.Contains(t, cmd.Path, "cgexec",
 		"expected cgexec in command path on Linux, got: %s", cmd.Path)
+}
+
+// TestSandbox_WazeroPath_SelectedByEnv verifies that CODEEXEC_RUNTIME=wasm routes
+// through the wazero path instead of exec.Command.
+func TestSandbox_WazeroPath_SelectedByEnv(t *testing.T) {
+	t.Setenv("CODEEXEC_RUNTIME", "wasm")
+	s := newTestSandbox(5)
+
+	result, err := s.Run(context.Background(), echoTool(), wasmCall("test.wasm"))
+	require.NoError(t, err)
+	// The wasm path should not produce exec-path artifacts.
+	assert.NotContains(t, result.Error, "cgexec")
+	assert.NotContains(t, result.Output, "cgexec")
+	// A file-not-found error confirms the wasm path was taken.
+	assert.NotEmpty(t, result.Error)
+}
+
+// TestSandbox_WazeroPath_Timeout verifies that wasm execution is terminated
+// when the context deadline is exceeded.
+func TestSandbox_WazeroPath_Timeout(t *testing.T) {
+	t.Setenv("CODEEXEC_RUNTIME", "wasm")
+	s := newTestSandbox(30)
+
+	wasmFile := "test_loop.wasm"
+	require.NoError(t, os.WriteFile(wasmFile, loopWasm, 0600))
+	defer os.Remove(wasmFile)
+
+	// A 300ms parent deadline is shorter than the 10s wasm-path internal timeout.
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	result, err := s.Run(ctx, echoTool(), wasmCall(wasmFile))
+	elapsed := time.Since(start)
+
+	require.NoError(t, err)
+	assert.NotEmpty(t, result.Error, "expected error from timed-out wasm execution")
+	assert.Less(t, elapsed, 5*time.Second, "should terminate well before 5s")
+}
+
+// TestSandbox_WazeroPath_WorkspaceOnlyMount verifies that the wasm path creates
+// ./workspace if it does not exist, providing the FS mount boundary.
+func TestSandbox_WazeroPath_WorkspaceOnlyMount(t *testing.T) {
+	t.Setenv("CODEEXEC_RUNTIME", "wasm")
+	s := newTestSandbox(5)
+
+	os.RemoveAll("./workspace") //nolint:errcheck
+	defer os.RemoveAll("./workspace") //nolint:errcheck
+
+	result, err := s.Run(context.Background(), echoTool(), wasmCall("nonexistent.wasm"))
+	require.NoError(t, err)
+	assert.NotEmpty(t, result.Error) // file-not-found expected
+
+	_, statErr := os.Stat("./workspace")
+	assert.NoError(t, statErr, "workspace dir should be created by the wasm path")
+}
+
+// TestSandbox_DefaultPath_Unchanged confirms that when CODEEXEC_RUNTIME is unset
+// the original exec.Command subprocess path is still used.
+func TestSandbox_DefaultPath_Unchanged(t *testing.T) {
+	t.Setenv("CODEEXEC_RUNTIME", "") // empty → default exec path
+	s := newTestSandbox(5)
+
+	result, err := s.Run(context.Background(), echoTool(), callWithArgs("echo", "hello"))
+	require.NoError(t, err)
+	assert.Empty(t, result.Error)
+	assert.Contains(t, result.Output, "hello")
 }
