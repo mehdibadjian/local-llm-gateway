@@ -39,6 +39,18 @@ func (h *Handler) chatComplete(c *fiber.Ctx, req *ChatCompletionRequest) error {
 	defer h.pool.Release()
 
 	msgs := req.Messages
+
+	if req.SessionID != "" && h.historyMgr != nil {
+		history, err := h.historyMgr.LoadAndTrim(c.Context(), req.SessionID, h.backend)
+		if err == nil && len(history) > 0 {
+			adapted := make([]adapter.Message, len(history))
+			for i, m := range history {
+				adapted[i] = adapter.Message{Role: m.Role, Content: m.Content}
+			}
+			msgs = append(adapted, msgs...)
+		}
+	}
+
 	if h.augmenter != nil {
 		augmented, searched, _ := h.augmenter.Augment(c.Context(), msgs)
 		if searched {

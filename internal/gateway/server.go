@@ -26,10 +26,11 @@ type Server struct {
 
 // Handler holds the dependencies shared by all route handlers.
 type Handler struct {
-	pool     *WorkerPool
-	backend  adapter.InferenceBackend
-	session  *memory.SessionStore
-	rdb      *redis.Client
+	pool      *WorkerPool
+	backend   adapter.InferenceBackend
+	session   *memory.SessionStore
+	historyMgr *memory.HistoryManager
+	rdb       *redis.Client
 	augmenter *orchestration.WebAugmenter // nil = no web augmentation
 }
 
@@ -54,7 +55,7 @@ func NewServer(backend adapter.InferenceBackend, rdb *redis.Client, session *mem
 	app.Get("/healthz", HealthzHandler)
 	app.Get("/readyz", ReadyzHandler(backend))
 
-	h := &Handler{pool: pool, backend: backend, session: session, rdb: rdb}
+	h := &Handler{pool: pool, backend: backend, session: session, historyMgr: memory.NewHistoryManager(session), rdb: rdb}
 	// All /v1 routes require auth + rate limiting.
 	api := app.Group("/v1", security.NewAuthMiddleware(), rateLimiter.Middleware())
 	api.Post("/chat/completions", h.ChatHandler)
